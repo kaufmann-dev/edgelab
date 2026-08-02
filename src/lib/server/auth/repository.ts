@@ -168,7 +168,10 @@ export async function touchAuthenticatedSession(
 		.update(authSessions)
 		.set({
 			lastActiveAt: now,
-			idleExpiresAt: sql<Date>`least(${candidateIdleExpiry}, ${authSessions.absoluteExpiresAt})`
+			idleExpiresAt: sql<Date>`least(
+				${sql.param(candidateIdleExpiry, authSessions.idleExpiresAt)},
+				${authSessions.absoluteExpiresAt}
+			)`
 		})
 		.where(
 			and(
