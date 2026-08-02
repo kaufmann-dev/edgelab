@@ -7,22 +7,17 @@ import {
 	tradingWatchlists
 } from '$lib/server/db/schema/trading';
 import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
-import type { MarketDataRestProvider } from '$lib/server/market-data';
+import { MassiveHttpError, type MarketDataRestProvider } from '$lib/server/market-data';
 import type { SnapshotFieldAccess } from '$lib/server/market-view';
 import { instrumentInsertValues } from '$lib/server/trading/drizzle-repository';
 import {
 	hydrateWatchlistSnapshots,
 	type WatchlistMarketClock
 } from '$lib/server/watchlist-market-data';
-import {
-	resolveExactActiveStock,
-	unavailableWatchlistRows,
-	type SavedWatchlistRow
-} from './watchlists.logic';
+import { unavailableWatchlistRows, type SavedWatchlistRow } from './watchlists.logic';
 
 export {
 	mergeWatchlistSnapshots,
-	resolveExactActiveStock,
 	type SavedWatchlistItem,
 	type SavedWatchlistRow
 } from './watchlists.logic';
@@ -189,15 +184,19 @@ export async function addStockToOwnedDefaultWatchlist(input: {
 	provider?: MarketDataRestProvider;
 }): Promise<AddWatchlistItemResult> {
 	const symbol = input.symbol.trim().toUpperCase();
-	let search: Awaited<ReturnType<MarketDataRestProvider['searchStocks']>>;
+	let instrument: Awaited<ReturnType<MarketDataRestProvider['getStock']>>;
 	try {
 		const provider = input.provider ?? getMarketDataProvider();
-		search = await provider.searchStocks(symbol, 20);
+		instrument = await provider.getStock(symbol);
 	} catch (cause) {
+		if (cause instanceof MassiveHttpError && cause.status === 404) {
+			return { status: 'stock_not_found', symbol };
+		}
 		throw new WatchlistMarketDataError(cause);
 	}
-	const instrument = resolveExactActiveStock(search.items, symbol);
-	if (!instrument) return { status: 'stock_not_found', symbol };
+	if (!instrument.active || instrument.symbol.toUpperCase() !== symbol) {
+		return { status: 'stock_not_found', symbol };
+	}
 
 	return db.transaction(async (transaction) => {
 		const watchlist = await ensureDefaultWatchlist(

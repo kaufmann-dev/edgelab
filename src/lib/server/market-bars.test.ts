@@ -1,7 +1,16 @@
 import Decimal from 'decimal.js';
 import { describe, expect, it, vi } from 'vitest';
-import type { AssetClass, MarketDataRestProvider, NormalizedBar } from '$lib/server/market-data';
-import { completedMinuteEnd, loadLatestCompletedMinuteBar } from './market-bars';
+import type {
+	AssetClass,
+	MarketDataRestProvider,
+	MarketSnapshot,
+	NormalizedBar
+} from '$lib/server/market-data';
+import {
+	completedMinuteEnd,
+	completedSnapshotMinuteBar,
+	loadLatestCompletedMinuteBar
+} from './market-bars';
 
 function bar(start: string, assetClass: AssetClass = 'stocks', symbol = 'AAPL'): NormalizedBar {
 	const startTime = new Date(start);
@@ -59,6 +68,52 @@ describe('completed aggregate lookup', () => {
 				to: String(Date.parse('2026-08-01T15:05:00.000Z') - 1)
 			})
 		);
+	});
+
+	it('allows an older completed snapshot minute only as an explicit reference', () => {
+		const lastMinute = bar('2026-07-31T23:45:00.000Z');
+		const snapshot = {
+			assetClass: 'stocks',
+			symbol: 'AAPL',
+			name: 'Apple Inc.',
+			mode: 'delayed',
+			lastMinute,
+			asOf: new Date('2026-08-01T00:01:14.000Z')
+		} satisfies MarketSnapshot;
+
+		expect(
+			completedSnapshotMinuteBar({
+				snapshot,
+				assetClass: 'stocks',
+				symbol: 'AAPL',
+				mode: 'delayed',
+				delayMinutes: 15,
+				at: new Date('2026-08-02T11:40:00.000Z')
+			})
+		).toBe(lastMinute);
+	});
+
+	it('rejects a snapshot minute from the wrong clock or future logical minute', () => {
+		const lastMinute = bar('2026-08-01T15:05:00.000Z');
+		const snapshot = {
+			assetClass: 'stocks',
+			symbol: 'AAPL',
+			name: 'Apple Inc.',
+			mode: 'delayed',
+			lastMinute,
+			asOf: new Date('2026-08-01T15:20:30.000Z')
+		} satisfies MarketSnapshot;
+		const input = {
+			snapshot,
+			assetClass: 'stocks' as const,
+			symbol: 'AAPL',
+			mode: 'delayed' as const,
+			delayMinutes: 15,
+			at: new Date('2026-08-01T15:20:42.000Z')
+		};
+
+		expect(completedSnapshotMinuteBar(input)).toBeUndefined();
+		expect(completedSnapshotMinuteBar({ ...input, mode: 'realtime' })).toBeUndefined();
 	});
 
 	it('selects completed option minute aggregates without treating a daily snapshot as a mark', async () => {

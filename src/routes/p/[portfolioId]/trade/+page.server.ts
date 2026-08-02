@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
-import { loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
+import { completedSnapshotMinuteBar, loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
 import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
 import {
 	MassiveHttpError,
@@ -126,6 +126,7 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 	}
 
 	let quote = null;
+	let referenceQuote = null;
 	let marketFeed = null;
 	let marketError: string | null = null;
 	const optionsTradingEnabled =
@@ -171,6 +172,15 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 				const snapshot = snapshots.items.find(
 					(item) => item.assetClass === 'stocks' && item.symbol === parsedSymbol.data
 				);
+				const snapshotMinute = snapshot
+					? completedSnapshotMinuteBar({
+							snapshot,
+							assetClass: 'stocks',
+							symbol: parsedSymbol.data,
+							mode: stockExecutionMode,
+							delayMinutes: stockDelayMinutes
+						})
+					: undefined;
 				if (snapshot && completedMinute) {
 					quote = stockQuote(snapshot, completedMinute, environment.capabilities.stocks.quotes);
 					marketFeed = {
@@ -184,6 +194,14 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 						asOf: quote.asOf
 					};
 				} else if (snapshot) {
+					if (snapshotMinute) {
+						referenceQuote = {
+							symbol: snapshot.symbol,
+							name: snapshot.name,
+							last: snapshotMinute.close.toNumber(),
+							asOf: snapshotMinute.endTime.toISOString()
+						};
+					}
 					marketError = 'Massive returned no recent completed minute aggregate for this symbol.';
 				} else {
 					marketError = 'Massive returned no stock snapshot for this symbol.';
@@ -231,6 +249,7 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 		optionsTradingReason,
 		optionsMarketData,
 		quote,
+		referenceQuote,
 		marketFeed,
 		marketError,
 		options,

@@ -150,6 +150,18 @@
 	});
 
 	const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+	const referenceTime = new Intl.DateTimeFormat('en-US', {
+		month: 'short',
+		day: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit'
+	});
+
+	function formatReferenceTime(timestamp: string): string {
+		const value = new Date(timestamp);
+		return Number.isNaN(value.valueOf()) ? timestamp : referenceTime.format(value);
+	}
+
 	let marketsRoute = $derived(
 		resolve('/p/[portfolioId]/markets', { portfolioId: data.portfolio.id })
 	);
@@ -500,6 +512,51 @@
 			<AlertTitle>Order ticket unavailable</AlertTitle>
 			<AlertDescription>{ticketError ?? data.marketError}</AlertDescription>
 		</Alert>
+	{/if}
+
+	{#if data.assetView === 'stock' && data.referenceQuote}
+		<section
+			class="max-w-2xl border border-border bg-muted/30"
+			aria-labelledby="reference-quote-heading"
+		>
+			<header
+				class="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-start sm:justify-between"
+			>
+				<div class="min-w-0">
+					<h2 id="reference-quote-heading" class="text-sm font-semibold">
+						Last available reference
+					</h2>
+					<p class="mt-1 truncate text-xs text-muted-foreground">
+						{data.referenceQuote.symbol}{#if data.referenceQuote.name}
+							· {data.referenceQuote.name}
+						{/if}
+					</p>
+				</div>
+				<div class="shrink-0 sm:text-right">
+					<p class="text-lg font-semibold tabular-nums">{money.format(data.referenceQuote.last)}</p>
+					<p class="text-xs text-muted-foreground">Massive snapshot minute close</p>
+				</div>
+			</header>
+			<div class="space-y-3 p-4 text-sm">
+				<dl class="grid gap-3 sm:grid-cols-2">
+					<div>
+						<dt class="sr-only">Source update time</dt>
+						<dd class="mt-1 font-medium tabular-nums">
+							<time datetime={data.referenceQuote.asOf}
+								>Updated {formatReferenceTime(data.referenceQuote.asOf)}</time
+							>
+						</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-muted-foreground">Status</dt>
+						<dd class="mt-1 font-medium">Stale · reference only</dd>
+					</div>
+				</dl>
+				<p class="text-xs text-muted-foreground">
+					This value is context only. It cannot be used to review or execute a simulated order.
+				</p>
+			</div>
+		</section>
 	{/if}
 
 	{#if data.optionsViewRequested && !data.optionsDataEnabled}

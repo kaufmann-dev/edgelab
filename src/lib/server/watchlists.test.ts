@@ -1,32 +1,8 @@
 import Decimal from 'decimal.js';
 import { describe, expect, it, vi } from 'vitest';
-import {
-	MassiveHttpError,
-	type Instrument,
-	type MarketSnapshot,
-	type NormalizedBar,
-	type StockInstrument
-} from '$lib/server/market-data';
+import { MassiveHttpError, type MarketSnapshot, type NormalizedBar } from '$lib/server/market-data';
 import { hydrateWatchlistSnapshots } from './watchlist-market-data';
-import {
-	mergeWatchlistSnapshots,
-	resolveExactActiveStock,
-	type SavedWatchlistItem
-} from './watchlists.logic';
-
-function stock(overrides: Partial<StockInstrument> = {}): StockInstrument {
-	return {
-		assetClass: 'stocks',
-		symbol: 'AAPL',
-		name: 'Apple Inc.',
-		currency: 'USD',
-		active: true,
-		primaryExchange: 'XNAS',
-		tickerType: 'CS',
-		roundLot: new Decimal(100),
-		...overrides
-	};
-}
+import { mergeWatchlistSnapshots, type SavedWatchlistItem } from './watchlists.logic';
 
 function savedItem(overrides: Partial<SavedWatchlistItem> = {}): SavedWatchlistItem {
 	return {
@@ -99,27 +75,6 @@ function minuteBar(overrides: Partial<NormalizedBar> = {}): NormalizedBar {
 		...overrides
 	};
 }
-
-describe('resolveExactActiveStock', () => {
-	it('normalizes the requested symbol and returns only an exact active stock', () => {
-		const instruments: Instrument[] = [
-			stock({ symbol: 'AAPL.WS', name: 'Apple warrant' }),
-			stock(),
-			stock({ symbol: 'MSFT', name: 'Microsoft Corp.' })
-		];
-
-		expect(resolveExactActiveStock(instruments, ' aapl ')?.name).toBe('Apple Inc.');
-	});
-
-	it('rejects inactive and partial search matches', () => {
-		const instruments: Instrument[] = [
-			stock({ active: false }),
-			stock({ symbol: 'AAPL.WS', name: 'Apple warrant' })
-		];
-
-		expect(resolveExactActiveStock(instruments, 'AAPL')).toBeNull();
-	});
-});
 
 describe('mergeWatchlistSnapshots', () => {
 	it('serializes an available Massive snapshot without changing the saved row identity', () => {

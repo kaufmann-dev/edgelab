@@ -70,6 +70,39 @@ describe('MassiveRestClient', () => {
 		expect((error as Error).message).toBe('rate limit exceeded');
 	});
 
+	it('loads an exact stock without relying on fuzzy search pagination', async () => {
+		const fetch = vi.fn<FetchLike>(async () =>
+			jsonResponse({
+				status: 'OK',
+				results: {
+					ticker: 'META',
+					name: 'Meta Platforms, Inc. Class A Common Stock',
+					currency_name: 'usd',
+					active: true,
+					primary_exchange: 'XNAS',
+					type: 'CS'
+				}
+			})
+		);
+		const client = new MassiveRestClient({
+			apiKey: 'secret-key',
+			capabilities: resolveMassiveCapabilities({
+				stocksTier: 'starter',
+				optionsTier: 'none'
+			}),
+			fetch
+		});
+
+		await expect(client.getStock(' meta ')).resolves.toMatchObject({
+			symbol: 'META',
+			name: 'Meta Platforms, Inc. Class A Common Stock',
+			active: true,
+			primaryExchange: 'XNAS',
+			tickerType: 'CS'
+		});
+		expect(new URL(fetch.mock.calls[0]?.[0] as URL).pathname).toBe('/v3/reference/tickers/META');
+	});
+
 	it('loads an exact option contract without guessing its underlying', async () => {
 		const fetch = vi.fn<FetchLike>(async () =>
 			jsonResponse({

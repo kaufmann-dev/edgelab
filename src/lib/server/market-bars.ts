@@ -2,6 +2,7 @@ import type {
 	AssetClass,
 	MarketDataMode,
 	MarketDataRestProvider,
+	MarketSnapshot,
 	NormalizedBar
 } from '$lib/server/market-data';
 
@@ -11,6 +12,31 @@ const DEFAULT_LOOKBACK_MINUTES = 5;
 export function completedMinuteEnd(at: Date, delayMinutes: number): Date {
 	const logicalTime = at.getTime() - delayMinutes * MINUTE_MILLISECONDS;
 	return new Date(Math.floor(logicalTime / MINUTE_MILLISECONDS) * MINUTE_MILLISECONDS);
+}
+
+export function completedSnapshotMinuteBar(input: {
+	snapshot: MarketSnapshot;
+	assetClass: AssetClass;
+	symbol: string;
+	mode: MarketDataMode;
+	delayMinutes: number;
+	at?: Date;
+}): NormalizedBar | undefined {
+	const bar = input.snapshot.lastMinute;
+	const at = input.at ?? new Date();
+	if (
+		!bar ||
+		bar.assetClass !== input.assetClass ||
+		bar.symbol !== input.symbol ||
+		bar.mode !== input.mode ||
+		bar.interval !== 'minute' ||
+		bar.sourceTime.getTime() !== bar.endTime.getTime() ||
+		bar.endTime > completedMinuteEnd(at, input.delayMinutes) ||
+		!bar.close.greaterThan(0)
+	) {
+		return undefined;
+	}
+	return bar;
 }
 
 export async function loadLatestCompletedMinuteBar(input: {

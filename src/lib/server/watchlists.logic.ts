@@ -1,9 +1,4 @@
-import type {
-	Instrument,
-	MarketSnapshot,
-	NormalizedBar,
-	StockInstrument
-} from '$lib/server/market-data';
+import type { MarketSnapshot, NormalizedBar } from '$lib/server/market-data';
 import { serializeSnapshot, type SnapshotFieldAccess } from '$lib/server/market-view';
 
 export interface SavedWatchlistItem {
@@ -29,21 +24,6 @@ export type SavedWatchlistRow = SavedWatchlistItem &
 				};
 		  }
 	);
-
-export function resolveExactActiveStock(
-	instruments: readonly Instrument[],
-	symbol: string
-): StockInstrument | null {
-	const normalizedSymbol = symbol.trim().toUpperCase();
-	return (
-		instruments.find(
-			(instrument): instrument is StockInstrument =>
-				instrument.assetClass === 'stocks' &&
-				instrument.active &&
-				instrument.symbol.toUpperCase() === normalizedSymbol
-		) ?? null
-	);
-}
 
 export function unavailableWatchlistRows(
 	items: readonly SavedWatchlistItem[],

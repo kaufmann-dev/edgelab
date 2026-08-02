@@ -1,4 +1,4 @@
-import { completedMinuteEnd, loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
+import { completedSnapshotMinuteBar, loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
 import {
 	MassiveHttpError,
 	type MarketDataMode,
@@ -51,16 +51,15 @@ function sanitizeSnapshotMinute(
 	clock: WatchlistMarketClock,
 	at: Date
 ): MarketSnapshot {
-	const bar = snapshot.lastMinute;
 	if (
-		!bar ||
-		bar.assetClass !== 'stocks' ||
-		bar.symbol !== snapshot.symbol ||
-		bar.mode !== clock.mode ||
-		bar.interval !== 'minute' ||
-		bar.sourceTime.getTime() !== bar.endTime.getTime() ||
-		bar.endTime > completedMinuteEnd(at, clock.delayMinutes) ||
-		!bar.close.greaterThan(0)
+		!completedSnapshotMinuteBar({
+			snapshot,
+			assetClass: 'stocks',
+			symbol: snapshot.symbol,
+			mode: clock.mode,
+			delayMinutes: clock.delayMinutes,
+			at
+		})
 	) {
 		return { ...snapshot, lastMinute: undefined };
 	}

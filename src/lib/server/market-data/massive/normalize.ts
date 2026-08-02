@@ -12,7 +12,6 @@ import {
 	stockInstrumentSchema,
 	type AssetClass,
 	type BarInterval,
-	type Instrument,
 	type MarketDataMode,
 	type MarketSnapshot,
 	type NormalizedBar,
@@ -20,7 +19,8 @@ import {
 	type NormalizedQuote,
 	type NormalizedTrade,
 	type OptionInstrument,
-	type OptionSnapshot
+	type OptionSnapshot,
+	type StockInstrument
 } from '../types';
 
 const timestampInputSchema = z.union([z.string(), z.number().finite(), z.bigint()]);
@@ -327,7 +327,7 @@ export function normalizeMassiveOptionContract(
 	});
 }
 
-export function normalizeMassiveStockInstrument(input: unknown): Instrument {
+export function normalizeMassiveStockInstrument(input: unknown): StockInstrument {
 	const raw = z
 		.object({
 			ticker: z.string().min(1),

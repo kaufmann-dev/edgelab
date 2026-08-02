@@ -5,6 +5,7 @@ import { tradingJournalEntries } from '$lib/server/db/schema/trading';
 import { loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
 import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
 import {
+	MassiveHttpError,
 	supportsOptionsExecution,
 	supportsStockSimulation,
 	type Instrument,
@@ -203,15 +204,14 @@ async function resolveInstruments(draft: OrderDraft): Promise<Map<string, Instru
 	const instruments = new Map<string, Instrument>();
 	for (const leg of draft.legs) {
 		let instrument: Instrument | undefined;
-		if (leg.symbol.startsWith('O:')) {
-			instrument = await provider.getOptionContract(leg.symbol);
-		} else {
-			const results = await provider.searchStocks(leg.symbol, 20);
-			instrument = results.items.find(
-				(candidate) => candidate.assetClass === 'stocks' && candidate.symbol === leg.symbol
-			);
+		try {
+			instrument = leg.symbol.startsWith('O:')
+				? await provider.getOptionContract(leg.symbol)
+				: await provider.getStock(leg.symbol);
+		} catch (cause) {
+			if (!(cause instanceof MassiveHttpError) || cause.status !== 404) throw cause;
 		}
-		if (!instrument) {
+		if (!instrument || !instrument.active || instrument.symbol !== leg.symbol) {
 			throw new OrderApplicationError(`Instrument ${leg.symbol} was not found.`, 404);
 		}
 		instruments.set(leg.symbol, instrument);

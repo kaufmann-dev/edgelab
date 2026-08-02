@@ -93,3 +93,41 @@ test('clears selected option state when same-route market data changes', async (
 		.toBeVisible();
 	await expect.element(ticket.getByText(aaplContract, { exact: true })).not.toBeInTheDocument();
 });
+
+test('shows a stale minute close as reference-only without enabling the stock ticket', async () => {
+	const marketError = 'Massive returned no recent completed minute aggregate for this symbol.';
+	const screen = await render(Page, {
+		params: { portfolioId },
+		form: null,
+		data: {
+			...tradeData({
+				symbol: 'AAPL',
+				expiration: '2026-09-18',
+				contractSymbol: 'O:AAPL260918C00200000',
+				strike: 200
+			}),
+			assetView: 'stock',
+			optionsViewRequested: false,
+			quote: null,
+			marketFeed: null,
+			marketError,
+			referenceQuote: {
+				symbol: 'AAPL',
+				name: 'Apple Inc.',
+				last: 202.38,
+				asOf: '2026-08-01T19:59:00.000Z'
+			}
+		} as unknown as PageData
+	});
+
+	await expect.element(screen.getByText(marketError, { exact: true })).toBeVisible();
+	await expect.element(screen.getByText('Last available reference', { exact: true })).toBeVisible();
+	await expect.element(screen.getByText('$202.38', { exact: true })).toBeVisible();
+	await expect
+		.element(screen.getByText('Massive snapshot minute close', { exact: true }))
+		.toBeVisible();
+	await expect.element(screen.getByText(/Updated Aug 1, 7:59 PM/)).toBeVisible();
+	await expect
+		.element(screen.getByRole('button', { name: 'Review order' }))
+		.not.toBeInTheDocument();
+});

@@ -7,7 +7,8 @@ import type {
 	MarketDataMode,
 	NormalizedBar,
 	OptionInstrument,
-	OptionSnapshot
+	OptionSnapshot,
+	StockInstrument
 } from '../types';
 import {
 	normalizeMassiveAggregateBar,
@@ -82,6 +83,7 @@ export interface MassiveMarketHoliday {
 
 export interface MarketDataRestProvider {
 	searchStocks(query: string, limit?: number): Promise<Page<Instrument>>;
+	getStock(symbol: string): Promise<StockInstrument>;
 	getUnifiedSnapshots(symbols: string[]): Promise<Page<MarketSnapshot>>;
 	getOptionContract(symbol: string): Promise<OptionInstrument>;
 	getOptionContracts(filters: OptionContractFilters): Promise<Page<OptionInstrument>>;
@@ -245,6 +247,13 @@ export class MassiveRestClient implements MarketDataRestProvider {
 			items: results.map((result) => normalizeMassiveStockInstrument(result)),
 			nextUrl: response.nextUrl
 		};
+	}
+
+	async getStock(symbol: string): Promise<StockInstrument> {
+		const response = await this.#request(
+			`/v3/reference/tickers/${encodeURIComponent(symbol.trim().toUpperCase())}`
+		);
+		return normalizeMassiveStockInstrument(response.results);
 	}
 
 	async getUnifiedSnapshots(symbols: string[]): Promise<Page<MarketSnapshot>> {
