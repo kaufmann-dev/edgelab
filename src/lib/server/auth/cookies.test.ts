@@ -4,6 +4,8 @@ import { OIDC_FLOW_COOKIE_NAME, SESSION_COOKIE_NAME } from './constants';
 import {
 	clearOidcFlowCookie,
 	clearSessionCookie,
+	serializeClearedSessionCookie,
+	serializeSessionCookie,
 	setOidcFlowCookie,
 	setSessionCookie
 } from './cookies';
@@ -34,6 +36,34 @@ describe('authentication cookies', () => {
 			sameSite: 'lax',
 			path: '/',
 			expires
+		});
+	});
+
+	test('serializes refreshed and cleared session cookies for response headers', () => {
+		const serialize = vi
+			.fn()
+			.mockReturnValueOnce('session=refreshed')
+			.mockReturnValueOnce('session=cleared');
+		const cookies = { serialize } as unknown as Cookies;
+		const expires = new Date('2026-08-02T12:00:00.000Z');
+
+		expect(serializeSessionCookie(cookies, 'opaque-token', expires, environment)).toBe(
+			'session=refreshed'
+		);
+		expect(serializeClearedSessionCookie(cookies, environment)).toBe('session=cleared');
+		expect(serialize).toHaveBeenNthCalledWith(1, SESSION_COOKIE_NAME, 'opaque-token', {
+			httpOnly: true,
+			secure: true,
+			sameSite: 'lax',
+			path: '/',
+			expires
+		});
+		expect(serialize).toHaveBeenNthCalledWith(2, SESSION_COOKIE_NAME, '', {
+			httpOnly: true,
+			secure: true,
+			sameSite: 'lax',
+			path: '/',
+			maxAge: 0
 		});
 	});
 

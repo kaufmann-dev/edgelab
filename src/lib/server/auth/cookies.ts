@@ -20,8 +20,27 @@ export function setSessionCookie(
 	cookies.set(SESSION_COOKIE_NAME, token, { ...baseOptions(environment), expires });
 }
 
+export function serializeSessionCookie(
+	cookies: Cookies,
+	token: string,
+	expires: Date,
+	environment: AuthEnvironment
+): string {
+	return cookies.serialize(SESSION_COOKIE_NAME, token, { ...baseOptions(environment), expires });
+}
+
 export function clearSessionCookie(cookies: Cookies, environment: AuthEnvironment): void {
 	cookies.delete(SESSION_COOKIE_NAME, baseOptions(environment));
+}
+
+export function serializeClearedSessionCookie(
+	cookies: Cookies,
+	environment: AuthEnvironment
+): string {
+	return cookies.serialize(SESSION_COOKIE_NAME, '', {
+		...baseOptions(environment),
+		maxAge: 0
+	});
 }
 
 export function setOidcFlowCookie(

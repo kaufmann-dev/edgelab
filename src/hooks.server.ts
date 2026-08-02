@@ -4,7 +4,11 @@ import { sequence } from '@sveltejs/kit/hooks';
 import { getTextDirection } from '$lib/paraglide/runtime';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { SESSION_COOKIE_NAME } from '$lib/server/auth/constants';
-import { clearSessionCookie, setSessionCookie } from '$lib/server/auth/cookies';
+import {
+	clearSessionCookie,
+	serializeClearedSessionCookie,
+	serializeSessionCookie
+} from '$lib/server/auth/cookies';
 import { getAuthEnvironment } from '$lib/server/auth/environment';
 import { loadAuthenticatedSession, refreshAuthenticatedSession } from '$lib/server/auth/session';
 import { ensureLiveOrderExecutionStarted } from '$lib/server/live-order-execution';
@@ -37,7 +41,7 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		});
 	});
 
-const handleAuthentication: Handle = async ({ event, resolve }) => {
+export const handleAuthentication: Handle = async ({ event, resolve }) => {
 	const environment = getAuthEnvironment();
 	const sessionToken = event.cookies.get(SESSION_COOKIE_NAME);
 	const authenticated = sessionToken ? await loadAuthenticatedSession(sessionToken) : null;
@@ -61,21 +65,24 @@ const handleAuthentication: Handle = async ({ event, resolve }) => {
 
 	if (authenticated && isDocumentNavigation(event.request)) activityRequested = true;
 	const response = await resolve(event);
+	if (!authenticated) return response;
 
-	if (authenticated && sessionToken && activityRequested) {
+	const headers = new Headers(response.headers);
+
+	if (sessionToken && activityRequested) {
 		const idleExpiresAt = await refreshAuthenticatedSession(sessionToken);
 		if (idleExpiresAt) {
-			setSessionCookie(event.cookies, sessionToken, idleExpiresAt, environment);
+			headers.append(
+				'set-cookie',
+				serializeSessionCookie(event.cookies, sessionToken, idleExpiresAt, environment)
+			);
 		} else {
-			clearSessionCookie(event.cookies, environment);
+			headers.append('set-cookie', serializeClearedSessionCookie(event.cookies, environment));
 			event.locals.user = null;
 			event.locals.session = null;
 		}
 	}
 
-	if (!authenticated) return response;
-
-	const headers = new Headers(response.headers);
 	headers.set('cache-control', 'private, no-store');
 	return new Response(response.body, {
 		status: response.status,

@@ -47,9 +47,6 @@
 </script>
 
 <script lang="ts">
-	import type { Pathname } from '$app/types';
-	import { resolve } from '$app/paths';
-
 	let {
 		class: className,
 		variant = 'default',
@@ -70,10 +67,6 @@
 		}
 		(onclick as ((event: MouseEvent) => void) | undefined)?.(event);
 	}
-
-	function internalPathname(value: string): Pathname {
-		return value as Pathname;
-	}
 </script>
 
 {#if href}
@@ -81,10 +74,10 @@
 		bind:this={ref}
 		data-slot="button"
 		class={cn(buttonVariants({ variant, size }), className)}
-		href={resolve(internalPathname(href))}
+		{...{ href }}
 		onclick={handleAnchorClick}
 		aria-disabled={disabled}
-		role={disabled ? 'link' : undefined}
+		role="link"
 		tabindex={disabled ? -1 : undefined}
 		{...restProps}
 	>
