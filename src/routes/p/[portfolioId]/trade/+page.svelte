@@ -4,7 +4,6 @@
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import ReceiptTextIcon from '@lucide/svelte/icons/receipt-text';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import type { Pathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import {
 		EmptyState,
@@ -182,12 +181,6 @@
 		aggregatePricing
 			? ['market', 'limit', 'stop', 'stop-limit']
 			: ['market', 'limit', 'stop', 'stop-limit', 'trailing-stop']
-	);
-	let stockTabPath = $derived(
-		`${tradeRoute}?symbol=${encodeURIComponent(data.requestedSymbol)}&asset=stock` as Pathname
-	);
-	let optionsTabPath = $derived(
-		`${tradeRoute}?symbol=${encodeURIComponent(data.requestedSymbol)}&asset=options` as Pathname
 	);
 	let selectedOptionContractIds = $derived(
 		optionLeg && availableOptionContractIds.has(optionLeg.contract.id)
@@ -488,7 +481,10 @@
 	{#if data.requestedSymbol && data.symbolValid && data.optionsDataEnabled}
 		<nav class="flex border-b border-border" aria-label="Asset ticket">
 			<a
-				href={resolve(stockTabPath)}
+				href={resolve(
+					`/p/[portfolioId]/trade?symbol=${encodeURIComponent(data.requestedSymbol)}&asset=stock`,
+					{ portfolioId: data.portfolio.id }
+				)}
 				aria-current={data.assetView === 'stock' ? 'page' : undefined}
 				class={[
 					'min-h-11 border border-b-0 border-border px-4 py-3 text-sm font-medium',
@@ -496,7 +492,10 @@
 				]}>Stock</a
 			>
 			<a
-				href={resolve(optionsTabPath)}
+				href={resolve(
+					`/p/[portfolioId]/trade?symbol=${encodeURIComponent(data.requestedSymbol)}&asset=options`,
+					{ portfolioId: data.portfolio.id }
+				)}
 				aria-current={data.assetView === 'options' ? 'page' : undefined}
 				class={[
 					'min-h-11 border-t border-r border-border px-4 py-3 text-sm font-medium',

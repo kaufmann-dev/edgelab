@@ -37,8 +37,8 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Open `http://localhost:5173`. EdgeLab redirects unauthenticated requests to the configured OIDC
-provider.
+Open `http://localhost:5173`. EdgeLab shows a sign-in screen before continuing through the
+configured OIDC provider.
 
 ## Configuration
 

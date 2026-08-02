@@ -15,6 +15,7 @@ import { ensureLiveOrderExecutionStarted } from '$lib/server/live-order-executio
 
 const PUBLIC_ROUTE_IDS = new Set([
 	'/auth/login',
+	'/auth/login/start',
 	'/auth/callback',
 	'/auth/logout/callback',
 	'/healthz'

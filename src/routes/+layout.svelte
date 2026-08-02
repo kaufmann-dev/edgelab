@@ -11,7 +11,6 @@
 	import NotebookPenIcon from '@lucide/svelte/icons/notebook-pen';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import WalletCardsIcon from '@lucide/svelte/icons/wallet-cards';
-	import type { Pathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { AppHeaderActions } from '$lib/components/app/index.js';
@@ -19,7 +18,6 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { AppShell, MarketFeedStatus } from '$lib/components/trading/index.js';
 	import type { AppNavItem, MarketFeedState } from '$lib/components/trading/types.js';
-	import { locales, localizeHref } from '$lib/paraglide/runtime';
 	import { ModeWatcher } from 'mode-watcher';
 	import type { LayoutProps } from './$types';
 	import './layout.css';
@@ -204,9 +202,3 @@
 {:else}
 	{@render children()}
 {/if}
-
-<div style="display:none">
-	{#each locales as locale (locale)}
-		<a href={resolve(localizeHref(page.url.pathname, { locale }) as Pathname)}>{locale}</a>
-	{/each}
-</div>
