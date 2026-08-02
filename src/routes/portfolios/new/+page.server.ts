@@ -61,26 +61,15 @@ export const actions: Actions = {
 
 		if (!optionsTradingEnabled) {
 			const requestedLongOptions = form.data.allowLongOptions;
-			const requestedCoveredOptions = form.data.allowCoveredOptions;
-			const requestedDefinedRiskSpreads = form.data.allowDefinedRiskSpreads;
 			const requestedMaxOptionPremium = form.data.maxOptionPremium !== undefined;
 			form.data.allowLongOptions = false;
-			form.data.allowCoveredOptions = false;
-			form.data.allowDefinedRiskSpreads = false;
 			form.data.maxOptionPremium = undefined;
 
-			if (
-				requestedLongOptions ||
-				requestedCoveredOptions ||
-				requestedDefinedRiskSpreads ||
-				requestedMaxOptionPremium
-			) {
+			if (requestedLongOptions || requestedMaxOptionPremium) {
 				form.valid = false;
 				const message =
-					'Options permissions require a same-clock Massive options plan with snapshots, WebSockets, quotes, and trades.';
+					'Options permissions require matching Massive Stocks and Options plan clocks with snapshots, WebSockets, and aggregate bars.';
 				if (requestedLongOptions) form.errors.allowLongOptions = [message];
-				if (requestedCoveredOptions) form.errors.allowCoveredOptions = [message];
-				if (requestedDefinedRiskSpreads) form.errors.allowDefinedRiskSpreads = [message];
 				if (requestedMaxOptionPremium) form.errors.maxOptionPremium = [message];
 				return fail(400, { form, supportedDataMode, optionsTradingEnabled });
 			}

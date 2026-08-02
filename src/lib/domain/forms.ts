@@ -37,8 +37,6 @@ export const createPortfolioSchema = z
 		dataMode: z.enum(['realtime', 'delayed']).default('delayed'),
 		allowShortEquity: z.boolean().default(false),
 		allowLongOptions: z.boolean().default(false),
-		allowCoveredOptions: z.boolean().default(false),
-		allowDefinedRiskSpreads: z.boolean().default(false),
 		allowExtendedHours: z.boolean().default(false),
 		requireTradePlan: z.boolean().default(false),
 		maxOrderNotional: optionalPositiveMoney('Maximum order notional'),
@@ -58,13 +56,6 @@ export const createPortfolioSchema = z
 				code: 'custom',
 				path: ['allowShortEquity'],
 				message: 'Short selling requires a margin portfolio'
-			});
-		}
-		if (portfolio.allowDefinedRiskSpreads && !portfolio.allowLongOptions) {
-			context.addIssue({
-				code: 'custom',
-				path: ['allowDefinedRiskSpreads'],
-				message: 'Defined-risk spreads require options permission'
 			});
 		}
 	});

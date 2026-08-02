@@ -1,15 +1,9 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { decimalSchema } from '../market-data/numeric';
-import {
-	instrumentSchema,
-	marketDataModeSchema,
-	type Instrument,
-	type NormalizedBar,
-	type NormalizedQuote
-} from '../market-data/types';
+import { instrumentSchema, marketDataModeSchema, type Instrument } from '../market-data/types';
 
-export const DEFAULT_EXECUTION_MODEL_VERSION = 'sim-execution-v1';
+export const DEFAULT_EXECUTION_MODEL_VERSION = 'sim-execution-v2';
 export const DEFAULT_RISK_MODEL_VERSION = 'risk-policy-v1';
 
 export const orderTypeSchema = z.enum(['market', 'limit', 'stop', 'stop_limit', 'trailing_stop']);
@@ -38,12 +32,16 @@ const positiveDecimalSchema = decimalSchema.refine((value) => value.greaterThan(
 	message: 'Value must be greater than zero'
 });
 
+const unitRatioQuantitySchema = positiveDecimalSchema.refine((value) => value.equals(1), {
+	message: 'Leg ratio must equal 1'
+});
+
 export const orderLegDraftSchema = z
 	.object({
 		symbol: z.string().trim().toUpperCase().min(1).max(64),
 		side: orderSideSchema,
 		positionEffect: positionEffectSchema,
-		ratioQuantity: positiveDecimalSchema.default(new Decimal(1))
+		ratioQuantity: unitRatioQuantitySchema.default(new Decimal(1))
 	})
 	.strict();
 
@@ -62,7 +60,7 @@ export const orderDraftSchema = z
 			.optional(),
 		netPriceEffect: netPriceEffectSchema.default('debit'),
 		extendedHours: z.boolean().default(false),
-		legs: z.array(orderLegDraftSchema).min(1).max(4)
+		legs: z.array(orderLegDraftSchema).length(1, 'Orders require exactly one leg')
 	})
 	.strict()
 	.superRefine((order, context) => {
@@ -110,13 +108,6 @@ export const orderDraftSchema = z
 				code: 'custom',
 				path: ['extendedHours'],
 				message: 'Extended-hours orders must be limit orders'
-			});
-		}
-		if (order.legs.length > 1 && !['market', 'limit'].includes(order.type)) {
-			context.addIssue({
-				code: 'custom',
-				path: ['type'],
-				message: 'Multi-leg orders support only market and limit types'
 			});
 		}
 		const symbols = new Set<string>();
@@ -170,12 +161,10 @@ export type Position = z.infer<typeof positionSchema>;
 export const riskPolicySchema = z
 	.object({
 		allowShortStock: z.boolean().default(false),
-		allowNakedOptions: z.literal(false).default(false),
 		maxOrderNotional: positiveDecimalSchema.optional(),
 		maxPositionNotional: positiveDecimalSchema.optional(),
 		maxOpenOrders: z.number().int().positive().default(100),
-		maxOptionContractsPerOrder: z.number().int().positive().default(100),
-		quoteMaxAgeMilliseconds: z.number().int().positive().default(60_000)
+		maxOptionContractsPerOrder: z.number().int().positive().default(100)
 	})
 	.strict();
 
@@ -206,7 +195,6 @@ export const executionModelSchema = z
 		version: z.string().trim().min(1).default(DEFAULT_EXECUTION_MODEL_VERSION),
 		latencyMilliseconds: z.number().int().nonnegative().default(250),
 		stockSlippageBps: decimalSchema.refine((value) => !value.isNegative()).default(new Decimal(0)),
-		optionSlippageBps: decimalSchema.refine((value) => !value.isNegative()).default(new Decimal(0)),
 		participationRate: decimalSchema
 			.refine((value) => value.greaterThan(0) && value.lessThanOrEqualTo(1))
 			.default(new Decimal('0.25'))
@@ -215,27 +203,20 @@ export const executionModelSchema = z
 
 export type ExecutionModel = z.infer<typeof executionModelSchema>;
 
-export interface MarketMarks {
-	quotes: ReadonlyMap<string, NormalizedQuote>;
-	bars: ReadonlyMap<string, NormalizedBar>;
-}
-
 export type RiskViolationCode =
 	| 'instrument_not_found'
 	| 'instrument_inactive'
 	| 'unsupported_currency'
-	| 'unsupported_multi_leg_strategy'
 	| 'unsupported_option_deliverable'
 	| 'invalid_quantity'
 	| 'market_data_unavailable'
 	| 'market_data_stale'
-	| 'quote_unavailable'
-	| 'quote_stale'
 	| 'extended_hours_not_supported'
 	| 'insufficient_cash'
 	| 'insufficient_position'
+	| 'position_effect_conflict'
 	| 'short_stock_disabled'
-	| 'uncovered_option'
+	| 'unsupported_option_order'
 	| 'order_notional_limit'
 	| 'open_order_limit'
 	| 'option_contract_limit';
@@ -279,7 +260,7 @@ export interface StrategyFill {
 	strategyQuantity: Decimal;
 	legs: FillLeg[];
 	marketDataMode: z.infer<typeof marketDataModeSchema>;
-	sourceEventKind: 'quote' | 'trade' | 'bar';
+	sourceEventKind: 'bar';
 	sourceTime: Date;
 	receivedAt: Date;
 	sourceSequence?: string;

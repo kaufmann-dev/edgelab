@@ -6,9 +6,21 @@ import type {
 	OrderRow,
 	PositionRow
 } from '$lib/components/trading/types';
+import { completedMinuteEnd, loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
 import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
-import type { MarketDataRestProvider, MarketSnapshot } from '$lib/server/market-data';
+import {
+	MassiveHttpError,
+	type AssetCapabilities,
+	type AssetClass,
+	type MassiveCapabilitySet,
+	type MarketDataMode,
+	type MarketDataRestProvider,
+	type MarketSnapshot,
+	type NormalizedBar
+} from '$lib/server/market-data';
 import type { OrderRecord, PortfolioValuation, PositionRecord } from '$lib/server/portfolio-read';
+
+const AGGREGATE_REQUEST_CONCURRENCY = 8;
 
 interface PositionViewInput {
 	positions: PositionRecord[];
@@ -32,20 +44,116 @@ export interface PositionViewResult {
 	benchmarkPrice: Decimal | null;
 }
 
-function markFromSnapshot(snapshot: MarketSnapshot): Decimal | null {
-	if (snapshot.assetClass === 'stocks' && snapshot.lastMinute?.close.greaterThan(0)) {
-		return snapshot.lastMinute.close;
-	}
+interface MarkObservation {
+	price: Decimal;
+	mode: MarketDataMode;
+	asOf: Date;
+	source: 'snapshot_minute' | 'quote' | 'trade' | 'completed_minute';
+}
+
+interface MarketSymbol {
+	assetClass: AssetClass;
+	symbol: string;
+}
+
+function marketSymbolKey(assetClass: AssetClass, symbol: string): string {
+	return `${assetClass}:${symbol}`;
+}
+
+function minuteMark(
+	snapshot: MarketSnapshot,
+	capability: AssetCapabilities,
+	valuationTime: Date
+): MarkObservation | null {
+	const bar = snapshot.lastMinute;
 	if (
+		!capability.minuteBars ||
+		capability.delayMinutes === null ||
+		!bar ||
+		bar.assetClass !== snapshot.assetClass ||
+		bar.symbol !== snapshot.symbol ||
+		bar.mode !== capability.executionMode ||
+		bar.interval !== 'minute' ||
+		bar.sourceTime.getTime() !== bar.endTime.getTime() ||
+		bar.endTime > completedMinuteEnd(valuationTime, capability.delayMinutes) ||
+		!bar.close.greaterThan(0)
+	) {
+		return null;
+	}
+
+	return {
+		price: bar.close,
+		mode: bar.mode,
+		asOf: bar.endTime,
+		source: 'snapshot_minute'
+	};
+}
+
+function quoteMark(
+	snapshot: MarketSnapshot,
+	capability: AssetCapabilities
+): MarkObservation | null {
+	if (
+		capability.quotes &&
 		snapshot.quote &&
+		snapshot.quote.assetClass === snapshot.assetClass &&
+		snapshot.quote.symbol === snapshot.symbol &&
+		snapshot.quote.mode === capability.executionMode &&
 		snapshot.quote.bidPrice.greaterThan(0) &&
 		snapshot.quote.askPrice.greaterThan(0) &&
 		snapshot.quote.bidPrice.lessThanOrEqualTo(snapshot.quote.askPrice)
 	) {
-		return snapshot.quote.bidPrice.plus(snapshot.quote.askPrice).dividedBy(2);
+		return {
+			price: snapshot.quote.bidPrice.plus(snapshot.quote.askPrice).dividedBy(2),
+			mode: snapshot.quote.mode,
+			asOf: snapshot.quote.sourceTime,
+			source: 'quote'
+		};
 	}
-	const fallback = snapshot.lastTrade?.price ?? snapshot.lastMinute?.close;
-	return fallback?.greaterThan(0) ? fallback : null;
+	return null;
+}
+
+function tradeMark(
+	snapshot: MarketSnapshot,
+	capability: AssetCapabilities
+): MarkObservation | null {
+	const trade = snapshot.lastTrade;
+	if (
+		!capability.trades ||
+		!trade ||
+		trade.assetClass !== snapshot.assetClass ||
+		trade.symbol !== snapshot.symbol ||
+		trade.mode !== capability.executionMode ||
+		!trade.price.greaterThan(0)
+	) {
+		return null;
+	}
+
+	return {
+		price: trade.price,
+		mode: trade.mode,
+		asOf: trade.sourceTime,
+		source: 'trade'
+	};
+}
+
+function markFromSnapshot(
+	snapshot: MarketSnapshot,
+	capability: AssetCapabilities,
+	valuationTime: Date
+): MarkObservation | null {
+	const minute = minuteMark(snapshot, capability, valuationTime);
+	if (snapshot.assetClass === 'stocks' && minute) return minute;
+	return quoteMark(snapshot, capability) ?? tradeMark(snapshot, capability) ?? minute;
+}
+
+function markFromCompletedMinute(bar: NormalizedBar): MarkObservation {
+	return {
+		price: bar.close,
+		mode: bar.mode,
+		asOf: bar.endTime,
+		source: 'completed_minute'
+	};
 }
 
 function metricTone(value: Decimal): MetricItem['tone'] {
@@ -66,6 +174,10 @@ function modeLabel(modes: Set<string>): string {
 	return 'MIXED FRESHNESS';
 }
 
+function isMarketDataAccessFailure(cause: unknown): cause is MassiveHttpError {
+	return cause instanceof MassiveHttpError && (cause.status === 401 || cause.status === 403);
+}
+
 async function loadSnapshotBatches(
 	provider: MarketDataRestProvider,
 	symbols: readonly string[]
@@ -83,30 +195,42 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 	const cashBalance = new Decimal(input.cashBalance);
 	const reservedCash = new Decimal(input.reservedCash);
 	const benchmarkSymbol = input.benchmarkSymbol?.trim().toUpperCase() || null;
+	const valuationTime = input.valuationTime ?? new Date();
 	let snapshots: MarketSnapshot[] = [];
+	let markRequestFailed = false;
 	let marketError: string | null = null;
+	const marksBySymbol = new Map<string, MarkObservation>();
 
 	if (input.positions.length > 0 || benchmarkSymbol) {
 		try {
 			const environment = getMarketEnvironment();
+			const capabilities: MassiveCapabilitySet = environment.capabilities;
 			const requiredAssetClasses = new Set(input.positions.map((position) => position.assetClass));
 			const unavailable = [...requiredAssetClasses].filter(
-				(assetClass) => !environment.capabilities[assetClass].snapshots
+				(assetClass) => !capabilities[assetClass].snapshots
 			);
 			if (unavailable.length > 0) {
 				marketError = `${unavailable.join(' and ')} snapshots are not included in the configured Massive plan.`;
 			}
 
-			const positionSymbols = [
-				...new Set(
+			const positionMarketSymbols = [
+				...new Map(
 					input.positions
-						.filter((position) => environment.capabilities[position.assetClass].snapshots)
-						.map((position) => position.symbol)
-				)
+						.filter((position) => capabilities[position.assetClass].snapshots)
+						.map((position) => [
+							marketSymbolKey(position.assetClass, position.symbol),
+							{ assetClass: position.assetClass, symbol: position.symbol } satisfies MarketSymbol
+						])
+				).values()
 			];
-			const benchmarkRequestSymbol = environment.capabilities.stocks.snapshots
-				? benchmarkSymbol
-				: null;
+			const positionSymbols = [...new Set(positionMarketSymbols.map(({ symbol }) => symbol))];
+			const benchmarkRequestSymbol = capabilities.stocks.snapshots ? benchmarkSymbol : null;
+			const requestedMarketSymbols = [
+				...positionMarketSymbols,
+				...(benchmarkRequestSymbol
+					? ([{ assetClass: 'stocks', symbol: benchmarkRequestSymbol }] satisfies MarketSymbol[])
+					: [])
+			];
 			const combinedSymbols = [
 				...new Set([
 					...positionSymbols,
@@ -121,24 +245,26 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 				if (combinedSymbols.length <= 250) {
 					try {
 						snapshots = (await provider.getUnifiedSnapshots(combinedSymbols)).items;
-					} catch {
+					} catch (cause) {
+						if (isMarketDataAccessFailure(cause)) throw cause;
 						if (positionSymbols.length > 0 && benchmarkWasAdditional) {
 							try {
 								snapshots = await loadSnapshotBatches(provider, positionSymbols);
-							} catch {
-								marketError =
-									'Market marks are temporarily unavailable. Cost basis remains visible.';
+							} catch (retryCause) {
+								if (isMarketDataAccessFailure(retryCause)) throw retryCause;
+								markRequestFailed = true;
 							}
 						} else if (positionSymbols.length > 0) {
-							marketError = 'Market marks are temporarily unavailable. Cost basis remains visible.';
+							markRequestFailed = true;
 						}
 					}
 				} else {
 					if (positionSymbols.length > 0) {
 						try {
 							snapshots = await loadSnapshotBatches(provider, positionSymbols);
-						} catch {
-							marketError = 'Market marks are temporarily unavailable. Cost basis remains visible.';
+						} catch (cause) {
+							if (isMarketDataAccessFailure(cause)) throw cause;
+							markRequestFailed = true;
 						}
 					}
 					if (benchmarkWasAdditional && benchmarkRequestSymbol) {
@@ -146,28 +272,113 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 							snapshots.push(
 								...(await provider.getUnifiedSnapshots([benchmarkRequestSymbol])).items
 							);
-						} catch {
+						} catch (cause) {
+							if (isMarketDataAccessFailure(cause)) throw cause;
 							// Benchmark availability never changes portfolio valuation completeness.
 						}
 					}
 				}
+
+				const snapshotsBySymbol = new Map(
+					snapshots.map((snapshot) => [
+						marketSymbolKey(snapshot.assetClass, snapshot.symbol),
+						snapshot
+					])
+				);
+				for (const requested of requestedMarketSymbols) {
+					const snapshot = snapshotsBySymbol.get(
+						marketSymbolKey(requested.assetClass, requested.symbol)
+					);
+					const mark = snapshot
+						? markFromSnapshot(snapshot, capabilities[requested.assetClass], valuationTime)
+						: null;
+					if (mark)
+						marksBySymbol.set(marketSymbolKey(requested.assetClass, requested.symbol), mark);
+				}
+
+				const aggregateRequests = [
+					...new Map(
+						requestedMarketSymbols
+							.filter((requested) => {
+								const capability = capabilities[requested.assetClass];
+								return (
+									!marksBySymbol.has(marketSymbolKey(requested.assetClass, requested.symbol)) &&
+									capability?.minuteBars &&
+									capability.executionMode !== null &&
+									capability.delayMinutes !== null
+								);
+							})
+							.map((requested) => [
+								marketSymbolKey(requested.assetClass, requested.symbol),
+								requested
+							])
+					).values()
+				];
+				for (
+					let start = 0;
+					start < aggregateRequests.length;
+					start += AGGREGATE_REQUEST_CONCURRENCY
+				) {
+					const batch = aggregateRequests.slice(start, start + AGGREGATE_REQUEST_CONCURRENCY);
+					const aggregateResults = await Promise.allSettled(
+						batch.map(async (requested) => {
+							const capability = capabilities[requested.assetClass];
+							if (!capability.executionMode || capability.delayMinutes === null) return undefined;
+							const bar = await loadLatestCompletedMinuteBar({
+								provider,
+								assetClass: requested.assetClass,
+								symbol: requested.symbol,
+								mode: capability.executionMode,
+								delayMinutes: capability.delayMinutes,
+								at: valuationTime
+							});
+							return bar ? { requested, bar } : undefined;
+						})
+					);
+					for (let index = 0; index < aggregateResults.length; index += 1) {
+						const result = aggregateResults[index];
+						if (result.status === 'fulfilled') {
+							if (result.value) {
+								marksBySymbol.set(
+									marketSymbolKey(result.value.requested.assetClass, result.value.requested.symbol),
+									markFromCompletedMinute(result.value.bar)
+								);
+							}
+						} else {
+							if (isMarketDataAccessFailure(result.reason)) throw result.reason;
+							const requested = batch[index];
+							if (
+								requested &&
+								positionMarketSymbols.some(
+									(position) =>
+										position.assetClass === requested.assetClass &&
+										position.symbol === requested.symbol
+								)
+							) {
+								markRequestFailed = true;
+							}
+						}
+					}
+				}
 			}
-		} catch {
-			if (input.positions.length > 0) {
-				marketError = 'Market marks are temporarily unavailable. Cost basis remains visible.';
+		} catch (cause) {
+			if (isMarketDataAccessFailure(cause)) {
+				marketError =
+					'Massive denied market-data access for the configured credentials or market-data plan.';
+			} else if (input.positions.length > 0) {
+				markRequestFailed = true;
 			}
 		}
 	}
 
-	const snapshotBySymbol = new Map(
-		snapshots.map((snapshot) => [`${snapshot.assetClass}:${snapshot.symbol}`, snapshot])
-	);
 	const calculations = input.positions.map((position) => {
 		const quantity = new Decimal(position.quantity);
 		const averageCost = new Decimal(position.averageCost);
 		const multiplier = new Decimal(position.contractMultiplier ?? 1);
-		const snapshot = snapshotBySymbol.get(`${position.assetClass}:${position.symbol}`);
-		const mark = snapshot ? markFromSnapshot(snapshot) : null;
+		const markObservation = marksBySymbol.get(
+			marketSymbolKey(position.assetClass, position.symbol)
+		);
+		const mark = markObservation?.price ?? null;
 		const marketValue = mark ? mark.times(quantity).times(multiplier) : null;
 		const unrealizedPnl = mark ? mark.minus(averageCost).times(quantity).times(multiplier) : null;
 		const costBasis = averageCost.times(quantity.abs()).times(multiplier);
@@ -175,17 +386,17 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 			position,
 			quantity,
 			averageCost,
-			snapshot,
+			markObservation,
 			mark,
 			marketValue,
 			unrealizedPnl,
 			costBasis
 		};
 	});
-	const benchmarkSnapshot = benchmarkSymbol
-		? snapshotBySymbol.get(`stocks:${benchmarkSymbol}`)
+	const benchmarkMark = benchmarkSymbol
+		? marksBySymbol.get(marketSymbolKey('stocks', benchmarkSymbol))
 		: undefined;
-	const benchmarkPrice = benchmarkSnapshot ? markFromSnapshot(benchmarkSnapshot) : null;
+	const benchmarkPrice = benchmarkMark?.price ?? null;
 
 	const signedMarketValue = calculations.reduce(
 		(total, calculation) => total.plus(calculation.marketValue ?? 0),
@@ -241,19 +452,15 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 		};
 	});
 
-	const modes = new Set(snapshots.map((snapshot) => snapshot.mode));
-	const latestAsOf = snapshots.reduce<Date | null>((latest, snapshot) => {
-		const sourceTime =
-			snapshot.assetClass === 'stocks'
-				? (snapshot.lastMinute?.sourceTime ??
-					snapshot.lastTrade?.sourceTime ??
-					snapshot.quote?.sourceTime ??
-					snapshot.asOf)
-				: (snapshot.quote?.sourceTime ??
-					snapshot.lastTrade?.sourceTime ??
-					snapshot.lastMinute?.sourceTime ??
-					snapshot.asOf);
-		return !latest || sourceTime > latest ? sourceTime : latest;
+	const markObservations = [...marksBySymbol.values()];
+	const modes = new Set(markObservations.map((mark) => mark.mode));
+	const latestAsOf = markObservations.reduce<Date | null>((latest, mark) => {
+		return !latest || mark.asOf > latest ? mark.asOf : latest;
+	}, null);
+	const valuationAsOf = calculations.reduce<Date | null>((latest, calculation) => {
+		const asOf = calculation.markObservation?.asOf;
+		if (!asOf) return latest;
+		return !latest || asOf > latest ? asOf : latest;
 	}, null);
 	const marketFeed =
 		latestAsOf === null
@@ -271,11 +478,13 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 				equity,
 				realizedPnl,
 				unrealizedPnl,
-				asOf: latestAsOf ?? input.valuationTime ?? new Date()
+				asOf: valuationAsOf ?? valuationTime
 			}
 		: null;
 	if (input.positions.length > 0 && !everyPositionMarked && marketError === null) {
-		marketError = 'Massive returned no usable mark for one or more open positions.';
+		marketError = markRequestFailed
+			? 'Market marks are temporarily unavailable. Cost basis remains visible.'
+			: 'Massive returned no usable mark for one or more open positions.';
 	}
 
 	return {

@@ -73,17 +73,18 @@ export const learningLessons: LearningLesson[] = [
 	},
 	{
 		slug: 'defined-risk-spreads',
-		title: 'Defined-risk option spreads',
+		title: 'Why multi-leg spreads are disabled',
 		summary:
-			'Multi-leg spreads combine options into one strategy. A useful simulator fills the complete combination atomically rather than inventing orphan legs.',
+			'Delayed aggregates arrive independently for each contract, so they cannot establish one coherent, atomic spread execution price.',
 		takeaways: [
-			'Debit spreads risk the debit paid.',
-			'Credit-spread maximum loss is spread width less credit, adjusted for multiplier and contracts.',
-			'Wide synthetic bid/ask spreads indicate weak executable liquidity.'
+			'Combining unrelated bars can invent a price that was never simultaneously executable.',
+			'Aggregate bars do not reveal NBBO spread, queue priority, or atomic package liquidity.',
+			'EdgeLab therefore limits option simulation to one standard contract per order.'
 		],
 		check: {
-			question: 'Why should a four-leg order not fill one leg at a time in this simulator?',
-			answer: 'The requested strategy and its bounded risk depend on all legs executing together.'
+			question: 'Why can EdgeLab not synchronize separate option bars into a spread fill?',
+			answer:
+				'The bars may represent trades at different times and do not prove one atomic package price.'
 		}
 	},
 	{

@@ -45,13 +45,15 @@ RUN_DATABASE_INTEGRATION=true pnpm test:unit -- src/lib/server/trading/drizzle-r
   numbers.
 - Keep portfolio mutations serializable, lock affected account state, and preserve idempotency by
   `clientOrderId`.
-- Model a multi-leg strategy as one order and one parent fill with fill legs. Keep ledger entries
-  linked to the parent fill, cap orders at four legs, fill strategies atomically, and never enable
-  naked options.
+- Keep the canonical order model single-leg. Option orders support one standard 100-share contract,
+  ratio one, LIMIT, DAY, and the regular session only. Allow only buy-to-open and sell-to-close,
+  reject expiration-day orders, and never enable adjusted deliverables, short options, naked
+  options, or multi-leg spreads.
 - Reject market-data mode mismatches and stale or unavailable market events. Never conceal an
   entitlement failure by silently downgrading the feed or representing a bar as a quote. New
   portfolios require Massive Stocks Starter or better and persist the Stocks plan's clock. The
-  Options plan is optional; option execution requires a same-clock quote-and-trade feed.
+  Options plan is optional; option execution requires same-clock snapshots, WebSockets, minute
+  aggregates, and second aggregates. Never require raw option quotes or trades for execution.
 - Preserve OIDC authorization code flow with PKCE S256, state, nonce, `client_secret_post`, opaque
   local sessions, encrypted flow data, bounded login-flow creation, and POST logout. Keep browser
   market streams authenticated, bounded, and short-lived enough to recheck session validity.

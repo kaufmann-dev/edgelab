@@ -95,6 +95,38 @@ describe('Massive market-data normalization', () => {
 		expect(event.receivedAt).toEqual(receivedAt);
 	});
 
+	it('normalizes a delayed option second aggregate with contract-volume provenance', () => {
+		const receivedAt = new Date('2026-01-02T15:45:02.000Z');
+		const [event] = normalizeMassiveWebSocketFrame(
+			[
+				{
+					ev: 'A',
+					sym: 'O:AAPL260116C00200000',
+					o: '4.10',
+					h: '4.20',
+					l: '4.05',
+					c: '4.15',
+					v: 7,
+					s: Date.parse('2026-01-02T15:30:01.000Z'),
+					e: Date.parse('2026-01-02T15:30:02.000Z')
+				}
+			],
+			{ assetClass: 'options', mode: 'delayed', receivedAt }
+		);
+
+		expect(event?.kind).toBe('bar');
+		if (event?.kind !== 'bar') throw new Error('Expected an option bar');
+		expect(event).toMatchObject({
+			assetClass: 'options',
+			symbol: 'O:AAPL260116C00200000',
+			mode: 'delayed',
+			interval: 'second'
+		});
+		expect(event.volume.toFixed()).toBe('7');
+		expect(event.sourceTime).toEqual(event.endTime);
+		expect(event.receivedAt).toEqual(receivedAt);
+	});
+
 	it('uses the requested multiplier and interval for aggregate bar end times', () => {
 		const bar = normalizeMassiveAggregateBar(
 			{ o: 100, h: 103, l: 99, c: 102, v: 20, t: Date.UTC(2026, 0, 1) },

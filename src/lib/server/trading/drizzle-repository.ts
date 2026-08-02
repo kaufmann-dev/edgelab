@@ -34,6 +34,7 @@ import type {
 	TradingUnitOfWork
 } from './repository';
 import {
+	DEFAULT_EXECUTION_MODEL_VERSION,
 	netPriceEffectSchema,
 	orderDraftSchema,
 	orderStatusSchema,
@@ -309,6 +310,70 @@ export function reservationInsertValues(
 	return values;
 }
 
+export function assertCanonicalOrderInsert(order: AcceptedOrder): void {
+	try {
+		orderDraftSchema.parse({
+			portfolioId: order.portfolioId,
+			tradePlanId: order.tradePlanId,
+			clientOrderId: order.clientOrderId,
+			type: order.type,
+			timeInForce: order.timeInForce,
+			quantity: order.quantity,
+			limitPrice: order.limitPrice,
+			stopPrice: order.stopPrice,
+			trailingPercent: order.trailingPercent,
+			netPriceEffect: order.netPriceEffect,
+			extendedHours: order.extendedHours,
+			legs: order.legs.map(({ symbol, side, positionEffect, ratioQuantity }) => ({
+				symbol,
+				side,
+				positionEffect,
+				ratioQuantity
+			}))
+		});
+	} catch (error) {
+		throw new TradingRepositoryDataError('New order does not match the canonical order schema', {
+			cause: error
+		});
+	}
+	if (order.executionModelVersion !== DEFAULT_EXECUTION_MODEL_VERSION) {
+		throw new TradingRepositoryDataError(
+			`New orders require execution model ${DEFAULT_EXECUTION_MODEL_VERSION}`
+		);
+	}
+	if (order.legs.length !== 1 || !order.legs[0]?.ratioQuantity.equals(1)) {
+		throw new TradingRepositoryDataError('New orders require exactly one unit-ratio leg');
+	}
+
+	const leg = order.legs[0];
+	if (leg.instrument.assetClass === 'stocks') {
+		if (order.timeInForce === 'ioc' || order.type === 'trailing_stop') {
+			throw new TradingRepositoryDataError(
+				'New stock orders must use an aggregate-compatible order type and time in force'
+			);
+		}
+		return;
+	}
+
+	const supportedPositionEffect =
+		(leg.side === 'buy' && leg.positionEffect === 'open') ||
+		(leg.side === 'sell' && leg.positionEffect === 'close');
+	const expectedNetPriceEffect = leg.side === 'buy' ? 'debit' : 'credit';
+	if (
+		!supportedPositionEffect ||
+		!leg.instrument.multiplier.equals(100) ||
+		leg.instrument.additionalUnderlyings.length > 0 ||
+		order.type !== 'limit' ||
+		order.timeInForce !== 'day' ||
+		order.extendedHours ||
+		order.netPriceEffect !== expectedNetPriceEffect
+	) {
+		throw new TradingRepositoryDataError(
+			'New option orders must use the supported long-only aggregate execution surface'
+		);
+	}
+}
+
 class DrizzleTradingUnitOfWork implements TradingUnitOfWork {
 	constructor(
 		private readonly transactionClient: TransactionClient,
@@ -484,6 +549,7 @@ class DrizzleTradingUnitOfWork implements TradingUnitOfWork {
 
 	async insertOrder(order: AcceptedOrder): Promise<void> {
 		this.#assertPortfolio(order.portfolioId);
+		assertCanonicalOrderInsert(order);
 		const instrumentIds = await this.#upsertInstruments(order.legs.map((leg) => leg.instrument));
 		await this.transactionClient.insert(tradingOrders).values(orderValues(order));
 		await this.transactionClient.insert(tradingOrderLegs).values(

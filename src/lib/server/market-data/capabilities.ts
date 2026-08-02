@@ -117,14 +117,16 @@ export function supportsStockSimulation(
 export function supportsOptionsExecution(capabilities: MassiveCapabilitySet): boolean {
 	const { stocks, options } = capabilities;
 	return (
-		stocks.available &&
-		stocks.executionMode !== null &&
+		supportsStockSimulation(stocks) &&
 		options.assetClass === 'options' &&
 		options.available &&
+		options.executionMode !== null &&
 		options.executionMode === stocks.executionMode &&
+		options.delayMinutes !== null &&
+		options.delayMinutes === stocks.delayMinutes &&
 		options.snapshots &&
 		options.websocket &&
-		options.quotes &&
-		options.trades
+		options.secondBars &&
+		options.minuteBars
 	);
 }

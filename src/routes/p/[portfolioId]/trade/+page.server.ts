@@ -24,26 +24,37 @@ const symbolSchema = z
 	.regex(/^[A-Z][A-Z0-9.]{0,14}$/);
 const expirationSchema = z.string().date();
 
-function stockQuote(snapshot: MarketSnapshot, completedMinute: NormalizedBar) {
+function stockQuote(snapshot: MarketSnapshot, completedMinute: NormalizedBar, showBidAsk: boolean) {
 	return {
 		symbol: snapshot.symbol,
 		name: snapshot.name,
 		last: completedMinute.close.toNumber(),
-		bid: snapshot.quote?.bidPrice.toNumber(),
-		ask: snapshot.quote?.askPrice.toNumber(),
+		...(showBidAsk
+			? {
+					bid: snapshot.quote?.bidPrice.toNumber(),
+					ask: snapshot.quote?.askPrice.toNumber()
+				}
+			: {}),
 		asOf: completedMinute.endTime.toISOString()
 	};
 }
 
-function optionContract(snapshot: OptionSnapshot) {
+function optionContract(snapshot: OptionSnapshot, showBidAsk: boolean) {
 	return {
 		id: snapshot.instrument.symbol,
 		symbol: snapshot.instrument.symbol,
 		type: snapshot.instrument.optionType,
 		strike: snapshot.instrument.strikePrice.toNumber(),
-		bid: snapshot.quote?.bidPrice.toNumber(),
-		ask: snapshot.quote?.askPrice.toNumber(),
-		last: snapshot.lastTrade?.price.toNumber(),
+		standardDeliverable:
+			snapshot.instrument.multiplier.equals(100) &&
+			snapshot.instrument.additionalUnderlyings.length === 0,
+		...(showBidAsk
+			? {
+					bid: snapshot.quote?.bidPrice.toNumber(),
+					ask: snapshot.quote?.askPrice.toNumber()
+				}
+			: {}),
+		sessionClose: snapshot.day?.close.toNumber(),
 		delta: snapshot.greeks?.delta?.toNumber(),
 		impliedVolatilityPercent: snapshot.impliedVolatility?.times(100).toNumber(),
 		volume: snapshot.day?.volume.toNumber(),
@@ -52,13 +63,13 @@ function optionContract(snapshot: OptionSnapshot) {
 	};
 }
 
-function optionRows(snapshots: OptionSnapshot[]) {
+function optionRows(snapshots: OptionSnapshot[], showBidAsk: boolean) {
 	const underlying = snapshots.find((snapshot) => snapshot.underlyingPrice)?.underlyingPrice;
 	const rows = new Map<number, ReturnType<typeof optionContract>[]>();
 	for (const snapshot of snapshots) {
 		const strike = snapshot.instrument.strikePrice.toNumber();
 		const contracts = rows.get(strike) ?? [];
-		contracts.push(optionContract(snapshot));
+		contracts.push(optionContract(snapshot, showBidAsk));
 		rows.set(strike, contracts);
 	}
 	const underlyingPrice = underlying?.toNumber();
@@ -122,7 +133,18 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 	const optionsDataEnabled = environment.capabilities.options.snapshots;
 	const optionsTradingReason = optionsTradingEnabled
 		? ''
-		: 'Option trading is not enabled by the configured Massive plans.';
+		: 'Option simulation requires matching Stocks and Options plan clocks with snapshots, WebSockets, and minute and second aggregates.';
+	const optionsMarketData = {
+		priceRecency:
+			environment.capabilities.options.recency === 'realtime'
+				? 'Real-time prices'
+				: '15-minute-delayed prices',
+		greeksRecency: 'Real-time Greeks and implied volatility',
+		openInterestRecency: 'Daily open interest',
+		showBidAsk: environment.capabilities.options.quotes,
+		executionDescription:
+			'Fills wait for future trade-derived one-second aggregates. An illiquid contract may not emit a bar and may remain unfilled.'
+	};
 	let options = { rows: [], expiration: null, expirations: [], error: null } as {
 		rows: ReturnType<typeof optionRows>;
 		expiration: string | null;
@@ -150,7 +172,7 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 					(item) => item.assetClass === 'stocks' && item.symbol === parsedSymbol.data
 				);
 				if (snapshot && completedMinute) {
-					quote = stockQuote(snapshot, completedMinute);
+					quote = stockQuote(snapshot, completedMinute, environment.capabilities.stocks.quotes);
 					marketFeed = {
 						state: snapshot.mode === 'realtime' ? ('live' as const) : ('delayed' as const),
 						modeLabel: environment.capabilities.stocks.label,
@@ -184,7 +206,7 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 						(item) => item.instrument.expirationDate === selectedExpiration
 					);
 					options = {
-						rows: optionRows(selected),
+						rows: optionRows(selected, optionsMarketData.showBidAsk),
 						expiration: selectedExpiration,
 						expirations,
 						error: null
@@ -207,6 +229,7 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 		optionsDataEnabled,
 		optionsTradingEnabled,
 		optionsTradingReason,
+		optionsMarketData,
 		quote,
 		marketFeed,
 		marketError,

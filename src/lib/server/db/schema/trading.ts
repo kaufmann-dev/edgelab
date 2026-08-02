@@ -66,8 +66,6 @@ export const tradingPortfolioPolicies = pgTable(
 		accountType: text('account_type').notNull().default('cash'),
 		allowShortEquity: boolean('allow_short_equity').notNull().default(false),
 		allowLongOptions: boolean('allow_long_options').notNull().default(false),
-		allowCoveredOptions: boolean('allow_covered_options').notNull().default(false),
-		allowDefinedRiskSpreads: boolean('allow_defined_risk_spreads').notNull().default(false),
 		allowExtendedHours: boolean('allow_extended_hours').notNull().default(false),
 		requireTradePlan: boolean('require_trade_plan').notNull().default(false),
 		maxOrderNotional: moneyColumn('max_order_notional'),
@@ -94,8 +92,7 @@ export const tradingPortfolioPolicies = pgTable(
 		),
 		check(
 			'trading_portfolio_policies_permissions_check',
-			sql`not (${table.accountType} = 'cash' and ${table.allowShortEquity})
-				and not (${table.allowDefinedRiskSpreads} and not ${table.allowLongOptions})`
+			sql`not (${table.accountType} = 'cash' and ${table.allowShortEquity})`
 		),
 		check(
 			'trading_portfolio_policies_order_notional_check',
@@ -393,7 +390,7 @@ export const tradingOrderLegs = pgTable(
 		uniqueIndex('trading_order_legs_order_number_uidx').on(table.orderId, table.legNumber),
 		uniqueIndex('trading_order_legs_order_instrument_uidx').on(table.orderId, table.instrumentId),
 		index('trading_order_legs_instrument_idx').on(table.instrumentId),
-		check('trading_order_legs_number_check', sql`${table.legNumber} between 1 and 4`),
+		check('trading_order_legs_number_check', sql`${table.legNumber} = 1`),
 		check('trading_order_legs_side_check', sql`${table.side} in ('buy', 'sell')`),
 		check(
 			'trading_order_legs_position_effect_check',
@@ -401,7 +398,7 @@ export const tradingOrderLegs = pgTable(
 		),
 		check(
 			'trading_order_legs_quantity_check',
-			sql`${table.ratioQuantity} > 0 and ${table.filledQuantity} >= 0`
+			sql`${table.ratioQuantity} = 1 and ${table.filledQuantity} >= 0`
 		)
 	]
 );
@@ -455,10 +452,7 @@ export const tradingFills = pgTable(
 		index('trading_fills_portfolio_created_idx').on(table.portfolioId, table.createdAt),
 		check('trading_fills_quantity_check', sql`${table.strategyQuantity} > 0`),
 		check('trading_fills_mode_check', sql`${table.marketDataMode} in ('realtime', 'delayed')`),
-		check(
-			'trading_fills_event_kind_check',
-			sql`${table.sourceEventKind} in ('quote', 'trade', 'bar')`
-		)
+		check('trading_fills_event_kind_check', sql`${table.sourceEventKind} = 'bar'`)
 	]
 );
 

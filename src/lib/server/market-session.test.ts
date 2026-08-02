@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	dayOrderExpiration,
+	dayOrderMarketDate,
 	logicalMarketTime,
 	orderAllowsSession,
 	usEquitySessionAt
@@ -75,5 +76,13 @@ describe('US equity market sessions', () => {
 				holidays
 			}).toISOString()
 		).toBe('2026-11-30T21:00:00.000Z');
+		expect(
+			dayOrderMarketDate({
+				acceptedAt: new Date('2026-08-06T21:00:00Z'),
+				delayMilliseconds: 0,
+				extendedHours: false,
+				holidays
+			})
+		).toBe('2026-08-07');
 	});
 });

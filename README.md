@@ -1,13 +1,14 @@
 # EdgeLab
 
 EdgeLab is an authenticated paper-trading application for practicing US stock workflows with
-Massive market data. Optional option workflows become available when the configured plans provide
-the required execution feeds. EdgeLab keeps portfolios, cash, positions, orders, fills, journal
-entries, and analytics inside the simulator; it does not connect to a brokerage or use real money.
+Massive market data. Optional single-contract option workflows become available when Stocks and
+Options plans provide the same executable aggregate-data clock. EdgeLab keeps portfolios, cash,
+positions, orders, fills, journal entries, and analytics inside the simulator; it does not connect
+to a brokerage or use real money.
 
 Each user can create isolated USD portfolios with independent starting capital, permissions, and
-risk limits. The interface includes stock tickets, capability-gated one-to-four-leg option
-tickets, live watchlists, working orders, positions, activity, a trade journal, benchmark-aware
+risk limits. The interface includes stock tickets, a capability-gated single-contract option
+ticket, live watchlists, working orders, positions, activity, a trade journal, benchmark-aware
 portfolio analytics, and short learning modules.
 
 ## Run Locally
@@ -56,7 +57,9 @@ The core configuration is required at runtime:
 - `MASSIVE_OPTIONS_PLAN` is optional. Omit it when the key has no Options plan; when set, it must
   be the key's actual Options tier. Option chains follow that plan's snapshot entitlement. Option
   order execution remains disabled unless the Stocks and Options plans share one clock and the
-  Options plan supplies snapshots, WebSockets, quotes, and trades.
+  Options plan supplies snapshots, WebSockets, minute aggregates, and second aggregates. Stocks
+  Starter plus Options Starter therefore enables the delayed option workflow without quote or
+  trade entitlements.
 
 Register these exact OIDC redirect URIs for the value of `ORIGIN`:
 
@@ -81,21 +84,29 @@ source time, and never presents aggregate bars as quotes or trades.
   reservation. Execution waits for the first eligible future second aggregate, so an order never
   fills from a bar already visible when it was submitted. Delayed bars are validated against the
   portfolio's 15-minute logical market clock and retain their provider and receipt timestamps.
-- Options execution requires a positive, non-crossed NBBO no more than 60 seconds old on both the
-  wall clock and portfolio's logical market clock. Multi-leg quotes must share a coherent
-  timestamp. Naked options are disabled, and a strategy may contain at most four compatible legs.
-- The initial execution model uses zero artificial latency, 2 basis points of stock slippage,
-  5 basis points of option slippage, and at most 25% of aggregate volume or displayed option quote
-  liquidity.
+- Watchlists and portfolio valuation use only entitled snapshot fields. When a snapshot has no
+  usable mark, they request a recent completed minute on that asset plan's clock and fail closed if
+  no such aggregate exists.
+- Options execution supports one standard, 100-share-deliverable contract per order. Option orders
+  are limit-only, DAY-only, regular-session orders with a fixed leg ratio of one. The only actions
+  are buy to open and sell to close; expiration-day orders, adjusted deliverables, short options,
+  naked options, and multi-leg spreads are rejected.
+- An accepted option order waits for a future qualifying second aggregate and never fills from a
+  chain snapshot or daily close. Option aggregates are trade-derived, so an illiquid contract may
+  emit no bar and remain unfilled. Qualifying sell-to-close orders fill at their persisted limit
+  rather than receiving uncapped gap improvement.
+- The initial execution model uses zero artificial latency, 2 basis points of stock slippage, and
+  at most 25% of aggregate volume. Option aggregate capacity is rounded down to whole contracts.
 - Stock trades have no simulated per-share fee. Options cost $0.65 per contract with no minimum
   order fee.
-- Risk checks cover available cash or collateral, portfolio permissions, order and position
+- Risk checks cover available cash, owned positions, portfolio permissions, order and position
   limits, gross exposure, daily loss, drawdown, option premium, and required trade plans. Market
   estimates include simulated slippage before cash is reserved.
 - Stock market, limit, stop, and stop-limit orders support DAY or GTC and match from Massive's
   second-aggregate stream. Aggregate-priced stock orders do not offer IOC or trailing stops because
-  those semantics require an immediate or ordered tick feed. Eligible option orders may fill from
-  quote/trade streams. Resting orders and first-seen bar cursors persist in PostgreSQL.
+  those semantics require an immediate or ordered tick feed. Eligible option limit orders match
+  from the Options second-aggregate stream. Resting orders and first-seen bar cursors persist in
+  PostgreSQL.
 - The matcher uses the US equity calendar and regular/extended sessions, expires DAY orders at the
   deterministic exchange boundary, and fails closed when calendar or executable market data is
   unavailable. Extended-hours execution is limited to opted-in stock limit orders.
@@ -129,6 +140,9 @@ it:
 pnpm db:generate
 pnpm db:migrate
 ```
+
+The v2 aggregate-execution migration cancels incompatible active v1 orders and releases their
+reservations. It preserves terminal v1 orders and fill provenance for audit history.
 
 The trading repository integration suite is opt-in because it modifies its target database. Run
 it only against a disposable PostgreSQL database:

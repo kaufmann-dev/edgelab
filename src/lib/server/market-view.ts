@@ -7,6 +7,11 @@ import type {
 	OptionSnapshot
 } from '$lib/server/market-data';
 
+export interface SnapshotFieldAccess {
+	quotes: boolean;
+	trades: boolean;
+}
+
 function serializeQuote(quote: NormalizedQuote | undefined) {
 	if (!quote) return undefined;
 	return {
@@ -86,26 +91,26 @@ export function serializeInstrument(instrument: Instrument) {
 	};
 }
 
-export function serializeSnapshot(snapshot: MarketSnapshot) {
+export function serializeSnapshot(snapshot: MarketSnapshot, access: SnapshotFieldAccess) {
 	return {
 		assetClass: snapshot.assetClass,
 		symbol: snapshot.symbol,
 		name: snapshot.name,
 		marketStatus: snapshot.marketStatus,
 		mode: snapshot.mode,
-		quote: serializeQuote(snapshot.quote),
-		lastTrade: serializeTrade(snapshot.lastTrade),
+		quote: access.quotes ? serializeQuote(snapshot.quote) : undefined,
+		lastTrade: access.trades ? serializeTrade(snapshot.lastTrade) : undefined,
 		lastMinute: snapshot.lastMinute ? serializeBar(snapshot.lastMinute) : undefined,
 		asOf: snapshot.asOf.toISOString()
 	};
 }
 
-export function serializeOptionSnapshot(snapshot: OptionSnapshot) {
+export function serializeOptionSnapshot(snapshot: OptionSnapshot, access: SnapshotFieldAccess) {
 	return {
 		instrument: serializeInstrument(snapshot.instrument),
 		mode: snapshot.mode,
-		quote: serializeQuote(snapshot.quote),
-		lastTrade: serializeTrade(snapshot.lastTrade),
+		quote: access.quotes ? serializeQuote(snapshot.quote) : undefined,
+		lastTrade: access.trades ? serializeTrade(snapshot.lastTrade) : undefined,
 		day: snapshot.day ? serializeBar(snapshot.day) : undefined,
 		greeks: snapshot.greeks
 			? {

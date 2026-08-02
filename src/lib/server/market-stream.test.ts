@@ -18,6 +18,16 @@ describe('market stream topics', () => {
 		).toThrow('Option streams require O: contract symbols');
 	});
 
+	it('builds Massive per-second aggregate topics for option contracts', () => {
+		expect(
+			buildMarketTopics({
+				assetClass: 'options',
+				symbols: ['O:AAPL260918C00200000'],
+				events: ['A']
+			})
+		).toEqual(['A.O:AAPL260918C00200000']);
+	});
+
 	it('rejects stock-only LULD events for options', () => {
 		expect(() =>
 			buildMarketTopics({

@@ -1,15 +1,15 @@
 import Decimal from 'decimal.js';
 import { describe, expect, it, vi } from 'vitest';
-import type { MarketDataRestProvider, NormalizedBar } from '$lib/server/market-data';
+import type { AssetClass, MarketDataRestProvider, NormalizedBar } from '$lib/server/market-data';
 import { completedMinuteEnd, loadLatestCompletedMinuteBar } from './market-bars';
 
-function bar(start: string): NormalizedBar {
+function bar(start: string, assetClass: AssetClass = 'stocks', symbol = 'AAPL'): NormalizedBar {
 	const startTime = new Date(start);
 	const endTime = new Date(startTime.getTime() + 60_000);
 	return {
 		kind: 'bar',
-		assetClass: 'stocks',
-		symbol: 'AAPL',
+		assetClass,
+		symbol,
 		mode: 'delayed',
 		interval: 'minute',
 		startTime,
@@ -58,6 +58,32 @@ describe('completed aggregate lookup', () => {
 				from: String(Date.parse('2026-08-01T15:00:00.000Z')),
 				to: String(Date.parse('2026-08-01T15:05:00.000Z') - 1)
 			})
+		);
+	});
+
+	it('selects completed option minute aggregates without treating a daily snapshot as a mark', async () => {
+		const symbol = 'O:AAPL260116C00200000';
+		const getBars = vi.fn(async () => ({
+			items: [
+				bar('2026-08-01T15:03:00.000Z', 'options', symbol),
+				bar('2026-08-01T15:04:00.000Z', 'options', symbol)
+			]
+		}));
+		const provider = { getBars } as Pick<MarketDataRestProvider, 'getBars'>;
+
+		const result = await loadLatestCompletedMinuteBar({
+			provider,
+			assetClass: 'options',
+			symbol,
+			mode: 'delayed',
+			delayMinutes: 15,
+			at: new Date('2026-08-01T15:20:42.000Z')
+		});
+
+		expect(result?.symbol).toBe(symbol);
+		expect(result?.endTime.toISOString()).toBe('2026-08-01T15:05:00.000Z');
+		expect(getBars).toHaveBeenCalledWith(
+			expect.objectContaining({ assetClass: 'options', symbol, timespan: 'minute' })
 		);
 	});
 });

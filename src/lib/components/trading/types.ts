@@ -180,9 +180,10 @@ export interface OptionContractQuote {
 	symbol: string;
 	type: OptionType;
 	strike: number;
+	standardDeliverable: boolean;
 	bid?: number;
 	ask?: number;
-	last?: number;
+	sessionClose?: number;
 	delta?: number;
 	impliedVolatilityPercent?: number;
 	volume?: number;

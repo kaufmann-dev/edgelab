@@ -38,7 +38,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			limit: 250
 		});
 		return json({
-			items: page.items.map(serializeOptionSnapshot),
+			items: page.items.map((snapshot) =>
+				serializeOptionSnapshot(snapshot, environment.capabilities.options)
+			),
 			feed: environment.capabilities.options,
 			nextUrlAvailable: Boolean(page.nextUrl)
 		});

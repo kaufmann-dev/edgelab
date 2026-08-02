@@ -135,7 +135,7 @@
 			<div>
 				<h2 id="watchlist-heading" class="text-base font-semibold">{data.watchlist.name}</h2>
 				<p class="mt-1 text-sm text-muted-foreground">
-					Save active stock symbols to this portfolio and review their latest Massive snapshot.
+					Save active stock symbols to this portfolio and review their latest Massive market data.
 				</p>
 			</div>
 			<form
@@ -210,7 +210,7 @@
 					]}
 				>
 					<caption class="sr-only">
-						Saved stock symbols, Massive snapshots, and portfolio actions
+						Saved stock symbols, Massive market data, and portfolio actions
 					</caption>
 					<thead class="bg-muted/40 text-xs text-muted-foreground uppercase">
 						<tr>
@@ -219,10 +219,10 @@
 								<th scope="col" class="px-4 py-3 font-medium">Bid / ask</th>
 							{/if}
 							<th scope="col" class="px-4 py-3 font-medium">
-								{data.feed?.quotes ? 'Last' : 'Minute close'}
+								{data.feed?.trades ? 'Last trade' : 'Minute close'}
 							</th>
 							<th scope="col" class="px-4 py-3 font-medium">
-								{data.feed?.quotes ? 'Snapshot' : 'Aggregate update'}
+								{data.feed?.trades ? 'Trade update' : 'Aggregate update'}
 							</th>
 							<th scope="col" class="px-4 py-3 text-right font-medium">Actions</th>
 						</tr>
@@ -264,19 +264,19 @@
 									{/if}
 									<td class="px-4 py-4 align-top font-medium tabular-nums">
 										{formatMoney(
-											data.feed?.quotes
+											data.feed?.trades
 												? (item.snapshot.data.lastTrade?.price ??
 														item.snapshot.data.lastMinute?.close)
 												: item.snapshot.data.lastMinute?.close
 										)}
 									</td>
 									<td class="px-4 py-4 align-top">
-										{#if data.feed?.quotes}
+										{#if data.feed?.trades && item.snapshot.data.lastTrade}
 											<time
-												datetime={item.snapshot.data.asOf}
+												datetime={item.snapshot.data.lastTrade.sourceTime}
 												class="text-xs text-muted-foreground"
 											>
-												{retrievedAtLabel(item.snapshot.data.asOf)}
+												{retrievedAtLabel(item.snapshot.data.lastTrade.sourceTime)}
 											</time>
 										{:else if item.snapshot.data.lastMinute}
 											<time
@@ -364,11 +364,11 @@
 								{/if}
 								<div>
 									<dt class="text-xs text-muted-foreground">
-										{data.feed?.quotes ? 'Last' : 'Minute close'}
+										{data.feed?.trades ? 'Last trade' : 'Minute close'}
 									</dt>
 									<dd class="mt-1 font-medium tabular-nums">
 										{formatMoney(
-											data.feed?.quotes
+											data.feed?.trades
 												? (item.snapshot.data.lastTrade?.price ??
 														item.snapshot.data.lastMinute?.close)
 												: item.snapshot.data.lastMinute?.close
@@ -377,12 +377,12 @@
 								</div>
 								<div>
 									<dt class="text-xs text-muted-foreground">
-										{data.feed?.quotes ? 'Snapshot' : 'Aggregate update'}
+										{data.feed?.trades ? 'Trade update' : 'Aggregate update'}
 									</dt>
 									<dd class="mt-1 text-xs">
-										{#if data.feed?.quotes}
-											<time datetime={item.snapshot.data.asOf}>
-												{retrievedAtLabel(item.snapshot.data.asOf)}
+										{#if data.feed?.trades && item.snapshot.data.lastTrade}
+											<time datetime={item.snapshot.data.lastTrade.sourceTime}>
+												{retrievedAtLabel(item.snapshot.data.lastTrade.sourceTime)}
 											</time>
 										{:else if item.snapshot.data.lastMinute}
 											<time datetime={item.snapshot.data.lastMinute.sourceTime}>
@@ -588,7 +588,7 @@
 							Stock prices are delayed by {data.feed.delayMinutes} minutes under the configured plan.
 						{/if}
 					</p>
-					{#if !data.feed.quotes && (data.feed.minuteBars || data.feed.secondBars)}
+					{#if !data.feed.quotes && !data.feed.trades && (data.feed.minuteBars || data.feed.secondBars)}
 						<p class="text-sm text-muted-foreground">
 							Aggregate bars power simulated stock pricing when raw quotes and trades are not
 							included in the plan.

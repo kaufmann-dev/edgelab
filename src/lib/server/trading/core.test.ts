@@ -2,7 +2,6 @@ import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
 import {
 	normalizedBarSchema,
-	normalizedQuoteSchema,
 	optionInstrumentSchema,
 	stockInstrumentSchema,
 	type Instrument,
@@ -10,23 +9,17 @@ import {
 	type OptionInstrument,
 	type StockInstrument
 } from '../market-data/types';
-import { calculateBarFill, calculateQuoteFill } from './execution';
+import { calculateBarFill } from './execution';
 import { applyFillToLedger, assertCashLedgerInvariant, LedgerInvariantError } from './ledger';
 import {
 	acceptedOrderMatchesDraft,
 	applyStrategyFill,
 	createAcceptedOrder,
-	markOrderTriggered,
 	OrderTransitionError,
 	transitionOrder
 } from './orders';
 import { previewOrder } from './risk';
-import {
-	executableBarContextSchema,
-	executableQuoteContextSchema,
-	type ExecutableBarContext,
-	type ExecutableQuoteContext
-} from './quote-validation';
+import { executableBarContextSchema, type ExecutableBarContext } from './bar-validation';
 import {
 	executionModelSchema,
 	orderDraftSchema,
@@ -60,6 +53,7 @@ function option(input: {
 	multiplier?: string;
 	underlyingSymbol?: string;
 	currency?: string;
+	expirationDate?: string;
 }): OptionInstrument {
 	return optionInstrumentSchema.parse({
 		assetClass: 'options',
@@ -70,37 +64,10 @@ function option(input: {
 		underlyingSymbol: input.underlyingSymbol ?? 'AAPL',
 		optionType: input.type,
 		exerciseStyle: 'american',
-		expirationDate: '2026-06-19',
+		expirationDate: input.expirationDate ?? '2026-06-19',
 		strikePrice: input.strike,
 		multiplier: input.multiplier ?? '100',
 		additionalUnderlyings: []
-	});
-}
-
-function quote(
-	symbol: string,
-	input: {
-		bid: string;
-		ask: string;
-		bidSize?: string;
-		askSize?: string;
-		mode?: 'realtime' | 'delayed';
-		sourceTime?: Date;
-		receivedAt?: Date;
-	}
-) {
-	return normalizedQuoteSchema.parse({
-		kind: 'quote',
-		assetClass: symbol.startsWith('O:') ? 'options' : 'stocks',
-		symbol,
-		mode: input.mode ?? 'realtime',
-		bidPrice: input.bid,
-		askPrice: input.ask,
-		bidSize: input.bidSize ?? '1000',
-		askSize: input.askSize ?? '1000',
-		sourceTime: input.sourceTime ?? acceptedAt,
-		receivedAt: input.receivedAt ?? acceptedAt,
-		rawTimestamp: acceptedAt.getTime().toString()
 	});
 }
 
@@ -144,20 +111,6 @@ function account(overrides: Partial<PortfolioAccountState> = {}): PortfolioAccou
 
 const previewExecutionModel = executionModelSchema.parse({});
 
-function quoteContext(overrides: Partial<ExecutableQuoteContext> = {}): ExecutableQuoteContext {
-	return executableQuoteContextSchema.parse({
-		attemptAt: acceptedAt,
-		expectedMode: 'realtime',
-		expectedDelayMilliseconds: 0,
-		maxTransportAgeMilliseconds: 60_000,
-		maxSourceAgeMilliseconds: 60_000,
-		futureToleranceMilliseconds: 1_000,
-		maxSourceSkewMilliseconds: 1_000,
-		maxReceiptSkewMilliseconds: 1_000,
-		...overrides
-	});
-}
-
 function barContext(overrides: Partial<ExecutableBarContext> = {}): ExecutableBarContext {
 	return executableBarContextSchema.parse({
 		attemptAt: new Date('2026-01-02T14:30:02.000Z'),
@@ -196,16 +149,16 @@ function bar(overrides: Partial<NormalizedBar> = {}): NormalizedBar {
 type PreviewInput = Parameters<typeof previewOrder>[0];
 
 function preview(
-	input: Omit<PreviewInput, 'bars' | 'executionModel' | 'quoteContext'> &
-		Partial<Pick<PreviewInput, 'bars' | 'executionModel' | 'quoteContext'>>
+	input: Omit<PreviewInput, 'bars' | 'executionModel' | 'barContext'> &
+		Partial<Pick<PreviewInput, 'bars' | 'executionModel' | 'barContext'>>
 ) {
 	const {
 		bars = new Map(),
 		executionModel = previewExecutionModel,
-		quoteContext: context = quoteContext(),
+		barContext: context = barContext(),
 		...previewInput
 	} = input;
-	return previewOrder({ ...previewInput, bars, executionModel, quoteContext: context });
+	return previewOrder({ ...previewInput, bars, executionModel, barContext: context });
 }
 
 describe('paper-order state machine', () => {
@@ -223,18 +176,16 @@ describe('paper-order state machine', () => {
 		);
 	});
 
-	it('rejects overfills, limits strategies to four legs, and triggers idempotently', () => {
+	it('rejects overfills and multiple legs', () => {
 		const order = acceptedOrder(draft(), [stock()]);
-		const triggered = markOrderTriggered(order, new Date('2026-01-02T14:31:00Z'));
 
-		expect(markOrderTriggered(triggered, new Date('2026-01-02T14:32:00Z'))).toBe(triggered);
 		expect(() => applyStrategyFill(order, new Decimal(2), new Date())).toThrow(
 			OrderTransitionError
 		);
 		expect(
 			orderDraftSchema.safeParse({
 				...draft(),
-				legs: Array.from({ length: 5 }, (_, index) => ({
+				legs: Array.from({ length: 2 }, (_, index) => ({
 					symbol: `TEST${index}`,
 					side: 'buy',
 					positionEffect: 'open',
@@ -310,6 +261,22 @@ describe('paper-order state machine', () => {
 			false
 		);
 	});
+
+	it('requires the canonical unit leg ratio', () => {
+		expect(
+			orderDraftSchema.safeParse({
+				...draft(),
+				legs: [
+					{
+						symbol: 'AAPL',
+						side: 'buy',
+						positionEffect: 'open',
+						ratioQuantity: new Decimal(2)
+					}
+				]
+			}).success
+		).toBe(false);
+	});
 });
 
 describe('order preview and collateral', () => {
@@ -330,7 +297,6 @@ describe('order preview and collateral', () => {
 		const previewResult = preview({
 			draft: order,
 			instruments: new Map([[contract.symbol, contract]]),
-			quotes: new Map(),
 			account: account({ cashBalance: new Decimal(500) }),
 			feeModel: {
 				optionPerContract: new Decimal('0.65'),
@@ -347,7 +313,7 @@ describe('order preview and collateral', () => {
 		);
 	});
 
-	it('accepts a covered call and rejects the same uncovered call', () => {
+	it('rejects option sell-to-open even when the call is covered', () => {
 		const contract = option({ symbol: 'O:AAPL260619C00200000', type: 'call', strike: '200' });
 		const order = draft({
 			limitPrice: new Decimal(5),
@@ -368,22 +334,50 @@ describe('order preview and collateral', () => {
 			averageCost: new Decimal(150),
 			realizedPnl: new Decimal(0)
 		};
-		const inputs = {
+		const previewResult = preview({
 			draft: order,
 			instruments: new Map([[contract.symbol, contract]]),
-			quotes: new Map()
-		};
-
-		const covered = preview({
-			...inputs,
 			account: account({ positions: new Map([[equity.symbol, coveredPosition]]) })
 		});
-		const uncovered = preview({ ...inputs, account: account() });
 
-		expect(covered.accepted).toBe(true);
-		expect(covered.shareCollateral.get('AAPL')?.toFixed()).toBe('100');
-		expect(uncovered.accepted).toBe(false);
-		expect(uncovered.violations.map((violation) => violation.code)).toContain('uncovered_option');
+		expect(previewResult.accepted).toBe(false);
+		expect(previewResult.optionCollateral.isZero()).toBe(true);
+		expect(previewResult.shareCollateral.size).toBe(0);
+		expect(previewResult.violations.map((violation) => violation.code)).toContain(
+			'unsupported_option_order'
+		);
+	});
+
+	it('reserves held contracts for an option sell-to-close', () => {
+		const contract = option({ symbol: 'O:AAPL260619C00200000', type: 'call', strike: '200' });
+		const position: Position = {
+			instrument: contract,
+			quantity: new Decimal(3),
+			averageCost: new Decimal('1.50'),
+			realizedPnl: new Decimal(0)
+		};
+		const order = draft({
+			quantity: new Decimal(2),
+			limitPrice: new Decimal('2.50'),
+			netPriceEffect: 'credit',
+			legs: [
+				{
+					symbol: contract.symbol,
+					side: 'sell',
+					positionEffect: 'close',
+					ratioQuantity: new Decimal(1)
+				}
+			]
+		});
+		const previewResult = preview({
+			draft: order,
+			instruments: new Map([[contract.symbol, contract]]),
+			account: account({ positions: new Map([[contract.symbol, position]]) })
+		});
+
+		expect(previewResult.shareCollateral.get(contract.symbol)?.toFixed()).toBe('2');
+		expect(previewResult.optionCollateral.isZero()).toBe(true);
+		expect(previewResult.accepted).toBe(true);
 	});
 
 	it('emits a close-position reservation and blocks a second close against it', () => {
@@ -408,8 +402,7 @@ describe('order preview and collateral', () => {
 		});
 		const previewInput = {
 			draft: closeOrder,
-			instruments: new Map([[equity.symbol, equity]]),
-			quotes: new Map()
+			instruments: new Map([[equity.symbol, equity]])
 		};
 		const first = preview({
 			...previewInput,
@@ -429,14 +422,51 @@ describe('order preview and collateral', () => {
 		expect(second.violations.map((violation) => violation.code)).toContain('insufficient_position');
 	});
 
-	it('reserves a stock market buy from the aggregate close and ignores quotes', () => {
+	it.each([
+		{ side: 'buy', heldQuantity: -10, direction: 'short' },
+		{ side: 'sell', heldQuantity: 10, direction: 'long' }
+	] as const)(
+		'rejects a $side-to-open order against an existing $direction position',
+		({ side, heldQuantity }) => {
+			const equity = stock();
+			const heldPosition: Position = {
+				instrument: equity,
+				quantity: new Decimal(heldQuantity),
+				averageCost: new Decimal(150),
+				realizedPnl: new Decimal(0)
+			};
+			const previewResult = preview({
+				draft: draft({
+					legs: [
+						{
+							symbol: equity.symbol,
+							side,
+							positionEffect: 'open',
+							ratioQuantity: new Decimal(1)
+						}
+					]
+				}),
+				instruments: new Map([[equity.symbol, equity]]),
+				account: account({
+					positions: new Map([[equity.symbol, heldPosition]]),
+					riskPolicy: riskPolicySchema.parse({ allowShortStock: true })
+				})
+			});
+
+			expect(previewResult.accepted).toBe(false);
+			expect(previewResult.violations.map((violation) => violation.code)).toContain(
+				'position_effect_conflict'
+			);
+		}
+	);
+
+	it('reserves a stock market buy from the aggregate close', () => {
 		const equity = stock();
 		const marketOrder = draft({ type: 'market', limitPrice: undefined });
 		const aggregateEnd = new Date('2026-01-02T14:15:02.000Z');
 		const previewResult = preview({
 			draft: marketOrder,
 			instruments: new Map([[equity.symbol, equity]]),
-			quotes: new Map([[equity.symbol, quote(equity.symbol, { bid: '499', ask: '500' })]]),
 			bars: new Map([
 				[
 					equity.symbol,
@@ -452,7 +482,7 @@ describe('order preview and collateral', () => {
 			]),
 			account: account({ cashBalance: new Decimal('100.05') }),
 			executionModel: executionModelSchema.parse({ stockSlippageBps: '10' }),
-			quoteContext: quoteContext({
+			barContext: barContext({
 				attemptAt: new Date('2026-01-02T14:30:02.000Z'),
 				expectedMode: 'delayed',
 				expectedDelayMilliseconds: 15 * 60_000
@@ -473,7 +503,6 @@ describe('order preview and collateral', () => {
 		const previewResult = preview({
 			draft: draft({ type: 'market', limitPrice: undefined }),
 			instruments: new Map([[equity.symbol, equity]]),
-			quotes: new Map(),
 			bars: new Map([
 				[
 					equity.symbol,
@@ -486,7 +515,7 @@ describe('order preview and collateral', () => {
 				]
 			]),
 			account: account(),
-			quoteContext: quoteContext({
+			barContext: barContext({
 				attemptAt: new Date('2026-01-02T14:30:02.000Z'),
 				expectedMode: 'delayed',
 				expectedDelayMilliseconds: 15 * 60_000
@@ -504,7 +533,6 @@ describe('order preview and collateral', () => {
 		const previewResult = preview({
 			draft: draft({ type: 'market', limitPrice: undefined }),
 			instruments: new Map([[equity.symbol, equity]]),
-			quotes: new Map([[equity.symbol, quote(equity.symbol, { bid: '99', ask: '100' })]]),
 			account: account()
 		});
 
@@ -514,166 +542,31 @@ describe('order preview and collateral', () => {
 		);
 	});
 
-	it.each([
-		{
-			name: 'mixed stock and option legs',
-			instruments: [
-				stock(),
-				option({ symbol: 'O:AAPL260619C00200000', type: 'call', strike: '200' })
-			] satisfies Instrument[]
-		},
-		{
-			name: 'different option underlyings',
-			instruments: [
-				option({ symbol: 'O:AAPL260619C00100000', type: 'call', strike: '100' }),
-				option({
-					symbol: 'O:MSFT260619C00100000',
-					type: 'call',
-					strike: '100',
-					underlyingSymbol: 'MSFT'
-				})
-			] satisfies Instrument[]
-		},
-		{
-			name: 'different option currencies',
-			instruments: [
-				option({ symbol: 'O:AAPL260619C00110000', type: 'call', strike: '110' }),
-				option({
-					symbol: 'O:AAPL260619C00115000',
-					type: 'call',
-					strike: '115',
-					currency: 'CAD'
-				})
-			] satisfies Instrument[]
-		},
-		{
-			name: 'different option multipliers',
-			instruments: [
-				option({ symbol: 'O:AAPL260619P00090000', type: 'put', strike: '90' }),
-				option({
-					symbol: 'O:AAPL260619P00085000',
-					type: 'put',
-					strike: '85',
-					multiplier: '10'
-				})
-			] satisfies Instrument[]
-		}
-	])('rejects multi-leg strategies with $name', ({ instruments }) => {
-		const strategy = draft({
-			limitPrice: new Decimal(3),
-			legs: instruments.map((instrument) => ({
-				symbol: instrument.symbol,
-				side: 'buy' as const,
-				positionEffect: 'open' as const,
-				ratioQuantity: new Decimal(1)
-			}))
-		});
-		const previewResult = preview({
-			draft: strategy,
-			instruments: new Map(instruments.map((instrument) => [instrument.symbol, instrument])),
-			quotes: new Map(
-				instruments.map((instrument) => [
-					instrument.symbol,
-					quote(instrument.symbol, { bid: '1', ask: '1.10' })
-				])
-			),
-			account: account()
+	it('rejects multiple legs at the canonical order boundary', () => {
+		const singleLegDraft = draft();
+		const parsed = orderDraftSchema.safeParse({
+			...singleLegDraft,
+			legs: [
+				...singleLegDraft.legs,
+				{
+					symbol: 'MSFT',
+					side: 'buy',
+					positionEffect: 'open',
+					ratioQuantity: new Decimal(1)
+				}
+			]
 		});
 
-		expect(previewResult.accepted).toBe(false);
-		expect(previewResult.violations.map((violation) => violation.code)).toContain(
-			'unsupported_multi_leg_strategy'
+		expect(parsed.success).toBe(false);
+		if (parsed.success) throw new Error('Expected the multi-leg order to be rejected');
+		expect(parsed.error.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					path: ['legs'],
+					message: 'Orders require exactly one leg'
+				})
+			])
 		);
-	});
-
-	it('reserves a multi-leg debit at the worst permitted limit plus fees', () => {
-		const firstCall = option({ symbol: 'O:AAPL260619C00120000', type: 'call', strike: '120' });
-		const secondCall = option({ symbol: 'O:AAPL260619C00125000', type: 'call', strike: '125' });
-		const order = draft({
-			quantity: new Decimal(2),
-			limitPrice: new Decimal(3),
-			netPriceEffect: 'debit',
-			legs: [
-				{
-					symbol: firstCall.symbol,
-					side: 'buy',
-					positionEffect: 'open',
-					ratioQuantity: new Decimal(1)
-				},
-				{
-					symbol: secondCall.symbol,
-					side: 'buy',
-					positionEffect: 'open',
-					ratioQuantity: new Decimal(1)
-				}
-			]
-		});
-		const previewResult = preview({
-			draft: order,
-			instruments: new Map([
-				[firstCall.symbol, firstCall],
-				[secondCall.symbol, secondCall]
-			]),
-			quotes: new Map([
-				[firstCall.symbol, quote(firstCall.symbol, { bid: '0.90', ask: '1' })],
-				[secondCall.symbol, quote(secondCall.symbol, { bid: '0.90', ask: '1' })]
-			]),
-			account: account(),
-			feeModel: {
-				optionPerContract: new Decimal('0.65'),
-				stockPerShare: new Decimal(0),
-				minimumPerOrder: new Decimal(0)
-			}
-		});
-
-		expect(previewResult.estimatedNetCashChange.toFixed(2)).toBe('-402.60');
-		expect(previewResult.cashRequired.toFixed(2)).toBe('602.60');
-		expect(previewResult.accepted).toBe(true);
-	});
-
-	it('reserves max loss less net credit for a defined-risk vertical', () => {
-		const shortCall = option({ symbol: 'O:AAPL260619C00100000', type: 'call', strike: '100' });
-		const longCall = option({ symbol: 'O:AAPL260619C00105000', type: 'call', strike: '105' });
-		const order = draft({
-			limitPrice: new Decimal(1),
-			netPriceEffect: 'credit',
-			legs: [
-				{
-					symbol: shortCall.symbol,
-					side: 'sell',
-					positionEffect: 'open',
-					ratioQuantity: new Decimal(1)
-				},
-				{
-					symbol: longCall.symbol,
-					side: 'buy',
-					positionEffect: 'open',
-					ratioQuantity: new Decimal(1)
-				}
-			]
-		});
-		const previewResult = preview({
-			draft: order,
-			instruments: new Map([
-				[shortCall.symbol, shortCall],
-				[longCall.symbol, longCall]
-			]),
-			quotes: new Map([
-				[shortCall.symbol, quote(shortCall.symbol, { bid: '5', ask: '5.10' })],
-				[longCall.symbol, quote(longCall.symbol, { bid: '1.90', ask: '2' })]
-			]),
-			account: account(),
-			feeModel: {
-				optionPerContract: new Decimal('0.65'),
-				stockPerShare: new Decimal(0),
-				minimumPerOrder: new Decimal(0)
-			}
-		});
-
-		expect(previewResult.estimatedNetCashChange.toFixed(2)).toBe('298.70');
-		expect(previewResult.optionCollateral.toFixed(2)).toBe('401.30');
-		expect(previewResult.cashRequired.toFixed(2)).toBe('401.30');
-		expect(previewResult.accepted).toBe(true);
 	});
 });
 
@@ -720,6 +613,143 @@ describe('deterministic fills and ledger invariants', () => {
 
 		expect(touched.fill?.legs[0]?.price.toFixed(2)).toBe('100.00');
 		expect(improved.fill?.legs[0]?.price.toFixed(2)).toBe('99.00');
+	});
+
+	it('collars favorable option sell-to-close gaps at the accepted limit without changing stock improvement', () => {
+		const optionContract = option({
+			symbol: 'O:AAPL260619C00200000',
+			type: 'call',
+			strike: '200'
+		});
+		const optionOrder = acceptedOrder(
+			draft({
+				limitPrice: new Decimal(5),
+				netPriceEffect: 'credit',
+				legs: [
+					{
+						symbol: optionContract.symbol,
+						side: 'sell',
+						positionEffect: 'close',
+						ratioQuantity: new Decimal(1)
+					}
+				]
+			}),
+			[optionContract]
+		);
+		const stockInstrument = stock();
+		const stockOrder = acceptedOrder(
+			draft({
+				limitPrice: new Decimal(100),
+				netPriceEffect: 'credit',
+				legs: [
+					{
+						symbol: stockInstrument.symbol,
+						side: 'sell',
+						positionEffect: 'open',
+						ratioQuantity: new Decimal(1)
+					}
+				]
+			}),
+			[stockInstrument]
+		);
+		const model = executionModelSchema.parse({});
+
+		const optionFill = calculateBarFill({
+			order: optionOrder,
+			bar: bar({
+				assetClass: 'options',
+				symbol: optionContract.symbol,
+				open: new Decimal(6),
+				high: new Decimal('6.50'),
+				low: new Decimal('5.50'),
+				close: new Decimal(6)
+			}),
+			executionModel: model,
+			barContext: barContext()
+		});
+		const stockFill = calculateBarFill({
+			order: stockOrder,
+			bar: bar({
+				open: new Decimal(101),
+				high: new Decimal(102),
+				low: new Decimal(100),
+				close: new Decimal(101)
+			}),
+			executionModel: model,
+			barContext: barContext()
+		});
+
+		expect(optionFill.fill?.legs[0]?.price.toFixed(2)).toBe('5.00');
+		expect(stockFill.fill?.legs[0]?.price.toFixed(2)).toBe('101.00');
+	});
+
+	it('defensively refuses unsupported and expiration-day option fills', () => {
+		const openShort = option({
+			symbol: 'O:AAPL260619C00200000',
+			type: 'call',
+			strike: '200'
+		});
+		const expiring = option({
+			symbol: 'O:AAPL260102C00200000',
+			type: 'call',
+			strike: '200',
+			expirationDate: '2026-01-02'
+		});
+		const sellToOpen = acceptedOrder(
+			draft({
+				limitPrice: new Decimal(5),
+				netPriceEffect: 'credit',
+				legs: [
+					{
+						symbol: openShort.symbol,
+						side: 'sell',
+						positionEffect: 'open',
+						ratioQuantity: new Decimal(1)
+					}
+				]
+			}),
+			[openShort]
+		);
+		const expirationDay = acceptedOrder(
+			draft({
+				limitPrice: new Decimal(5),
+				legs: [
+					{
+						symbol: expiring.symbol,
+						side: 'buy',
+						positionEffect: 'open',
+						ratioQuantity: new Decimal(1)
+					}
+				]
+			}),
+			[expiring]
+		);
+		const aggregateFor = (symbol: string) =>
+			bar({
+				assetClass: 'options',
+				symbol,
+				open: new Decimal(5),
+				high: new Decimal(6),
+				low: new Decimal(4),
+				close: new Decimal(5)
+			});
+
+		expect(
+			calculateBarFill({
+				order: sellToOpen,
+				bar: aggregateFor(openShort.symbol),
+				executionModel: executionModelSchema.parse({}),
+				barContext: barContext()
+			}).fill
+		).toBeUndefined();
+		expect(
+			calculateBarFill({
+				order: expirationDay,
+				bar: aggregateFor(expiring.symbol),
+				executionModel: executionModelSchema.parse({}),
+				barContext: barContext()
+			}).fill
+		).toBeUndefined();
 	});
 
 	it('triggers an intrabar stop and fills it as a slipped market order', () => {
@@ -803,176 +833,6 @@ describe('deterministic fills and ledger invariants', () => {
 		expect(result.fill).toBeUndefined();
 	});
 
-	it('executes an IOC attempt captured after acceptance against a newly received quote', () => {
-		const instrument = stock();
-		const order = createAcceptedOrder({
-			id: orderId,
-			draft: draft({ type: 'market', timeInForce: 'ioc', limitPrice: undefined }),
-			instruments: new Map([[instrument.symbol, instrument]]),
-			acceptedAt,
-			latencyMilliseconds: 0
-		});
-		const quoteReceivedAt = new Date(acceptedAt.getTime() + 1);
-		const attemptAt = new Date(quoteReceivedAt.getTime() + 1);
-		const fill = calculateQuoteFill({
-			order,
-			quotes: new Map([
-				[
-					instrument.symbol,
-					quote(instrument.symbol, {
-						bid: '99',
-						ask: '100',
-						sourceTime: quoteReceivedAt,
-						receivedAt: quoteReceivedAt
-					})
-				]
-			]),
-			executionModel: executionModelSchema.parse({ latencyMilliseconds: 0 }),
-			quoteContext: quoteContext({ attemptAt })
-		});
-
-		expect(fill?.strategyQuantity.toFixed()).toBe('1');
-	});
-
-	it('honors latency, displayed liquidity, slippage, and delayed-data provenance', () => {
-		const instrument = stock();
-		const order = acceptedOrder(
-			draft({ type: 'market', limitPrice: undefined, quantity: new Decimal(10) }),
-			[instrument]
-		);
-		const tooEarly = quote('AAPL', { bid: '99', ask: '100', bidSize: '4', askSize: '4' });
-		const fillAttemptAt = new Date('2026-01-02T14:30:00.250Z');
-		const eligible = normalizedQuoteSchema.parse({
-			...tooEarly,
-			mode: 'delayed',
-			sourceTime: new Date(fillAttemptAt.getTime() - 15 * 60_000),
-			receivedAt: fillAttemptAt
-		});
-		const model = executionModelSchema.parse({ stockSlippageBps: '10', participationRate: '0.5' });
-
-		expect(
-			calculateQuoteFill({
-				order,
-				quotes: new Map([['AAPL', tooEarly]]),
-				executionModel: model,
-				quoteContext: quoteContext()
-			})
-		).toBeUndefined();
-		expect(
-			calculateQuoteFill({
-				order,
-				quotes: new Map([['AAPL', eligible]]),
-				executionModel: model,
-				quoteContext: quoteContext({ attemptAt: fillAttemptAt })
-			})
-		).toBeUndefined();
-		expect(
-			calculateQuoteFill({
-				order,
-				quotes: new Map([['AAPL', eligible]]),
-				executionModel: model,
-				quoteContext: quoteContext({
-					expectedMode: 'delayed',
-					expectedDelayMilliseconds: 15 * 60_000
-				})
-			})
-		).toBeUndefined();
-		const fill = calculateQuoteFill({
-			order,
-			quotes: new Map([['AAPL', eligible]]),
-			executionModel: model,
-			quoteContext: quoteContext({
-				attemptAt: fillAttemptAt,
-				expectedMode: 'delayed',
-				expectedDelayMilliseconds: 15 * 60_000
-			})
-		});
-
-		expect(fill?.strategyQuantity.toFixed()).toBe('2');
-		expect(fill?.legs[0]?.price.toFixed(2)).toBe('100.10');
-		expect(fill?.marketDataMode).toBe('delayed');
-		expect(fill?.executionModelVersion).toBe('sim-execution-v1');
-	});
-
-	it('tests single-leg limit marketability on raw NBBO and clamps adverse slippage', () => {
-		const instrument = stock();
-		const fillAttemptAt = new Date('2026-01-02T14:30:00.250Z');
-		const context = quoteContext({ attemptAt: fillAttemptAt });
-		const model = executionModelSchema.parse({ stockSlippageBps: '100' });
-		const buyOrder = acceptedOrder(draft({ limitPrice: new Decimal(100) }), [instrument]);
-		const sellOrder = acceptedOrder(
-			draft({
-				limitPrice: new Decimal(100),
-				legs: [
-					{
-						symbol: instrument.symbol,
-						side: 'sell',
-						positionEffect: 'close',
-						ratioQuantity: new Decimal(1)
-					}
-				]
-			}),
-			[instrument]
-		);
-		const executableBuyQuote = quote(instrument.symbol, {
-			bid: '99',
-			ask: '100',
-			sourceTime: fillAttemptAt,
-			receivedAt: fillAttemptAt
-		});
-		const nonMarketableBuyQuote = quote(instrument.symbol, {
-			bid: '99',
-			ask: '100.01',
-			sourceTime: fillAttemptAt,
-			receivedAt: fillAttemptAt
-		});
-		const zeroCapacityBuyQuote = quote(instrument.symbol, {
-			bid: '99',
-			ask: '100',
-			askSize: '0',
-			sourceTime: fillAttemptAt,
-			receivedAt: fillAttemptAt
-		});
-		const executableSellQuote = quote(instrument.symbol, {
-			bid: '100',
-			ask: '101',
-			sourceTime: fillAttemptAt,
-			receivedAt: fillAttemptAt
-		});
-
-		const buyFill = calculateQuoteFill({
-			order: buyOrder,
-			quotes: new Map([[instrument.symbol, executableBuyQuote]]),
-			executionModel: model,
-			quoteContext: context
-		});
-		const sellFill = calculateQuoteFill({
-			order: sellOrder,
-			quotes: new Map([[instrument.symbol, executableSellQuote]]),
-			executionModel: model,
-			quoteContext: context
-		});
-
-		expect(buyFill?.legs[0]?.price.toFixed(2)).toBe('100.00');
-		expect(sellFill?.legs[0]?.price.toFixed(2)).toBe('100.00');
-		expect(
-			calculateQuoteFill({
-				order: buyOrder,
-				quotes: new Map([[instrument.symbol, nonMarketableBuyQuote]]),
-				executionModel: model,
-				quoteContext: context
-			})
-		).toBeUndefined();
-		expect(
-			calculateQuoteFill({
-				order: buyOrder,
-				quotes: new Map([[instrument.symbol, zeroCapacityBuyQuote]]),
-				executionModel: model,
-				quoteContext: context
-			})
-		).toBeUndefined();
-	});
-
 	it('posts balanced cash entries and realizes fee-adjusted P&L', () => {
 		const instrument = stock();
 		const openingOrder = acceptedOrder(
@@ -995,7 +855,7 @@ describe('deterministic fills and ledger invariants', () => {
 			sourceEventKind: 'bar',
 			sourceTime: acceptedAt,
 			receivedAt: acceptedAt,
-			executionModelVersion: 'sim-execution-v1'
+			executionModelVersion: 'sim-execution-v2'
 		};
 		let sequence = 0;
 		const opened = applyFillToLedger({

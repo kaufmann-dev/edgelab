@@ -273,53 +273,8 @@
 										<div>
 											<Label>Long options</Label>
 											<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-												>Buy calls and puts with simulated premium.</Description
-											>
-										</div>
-									</div>
-									<FieldErrors class="mt-2 text-xs text-destructive" />
-								</div>
-							</Field>
-
-							<Field {form} name="allowCoveredOptions">
-								<div class="bg-card p-5">
-									<div class="flex items-start gap-3">
-										<Control>
-											{#snippet children({ props })}
-												<Checkbox
-													{...props}
-													bind:checked={$formData.allowCoveredOptions}
-													class="mt-0.5 rounded-none transition-none"
-												/>
-											{/snippet}
-										</Control>
-										<div>
-											<Label>Covered options</Label>
-											<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-												>Write options only when a qualifying position covers them.</Description
-											>
-										</div>
-									</div>
-									<FieldErrors class="mt-2 text-xs text-destructive" />
-								</div>
-							</Field>
-
-							<Field {form} name="allowDefinedRiskSpreads">
-								<div class="bg-card p-5">
-									<div class="flex items-start gap-3">
-										<Control>
-											{#snippet children({ props })}
-												<Checkbox
-													{...props}
-													bind:checked={$formData.allowDefinedRiskSpreads}
-													class="mt-0.5 rounded-none transition-none"
-												/>
-											{/snippet}
-										</Control>
-										<div>
-											<Label>Defined-risk spreads</Label>
-											<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-												>Practice multi-leg strategies with capped risk.</Description
+												>Buy one standard call or put to open and sell an existing long contract to
+												close. Expiration-day orders are unavailable.</Description
 											>
 										</div>
 									</div>
@@ -343,7 +298,7 @@
 									<div>
 										<Label>Extended hours</Label>
 										<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-											>Allow eligible limit orders outside the regular session.</Description
+											>Allow eligible stock limit orders outside the regular session.</Description
 										>
 									</div>
 								</div>

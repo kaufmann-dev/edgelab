@@ -3,7 +3,7 @@ import { createPortfolioSchema, stockOrderSchema } from './forms';
 
 describe('createPortfolioSchema', () => {
 	it('normalizes a valid portfolio and preserves intentional defaults', () => {
-		expect.assertions(6);
+		expect.assertions(7);
 		const parsed = createPortfolioSchema.parse({
 			name: '  First run  ',
 			startingCapital: '25000',
@@ -18,6 +18,7 @@ describe('createPortfolioSchema', () => {
 		expect(parsed.riskBehavior).toBe('block');
 		expect(parsed.dataMode).toBe('delayed');
 		expect(parsed.allowLongOptions).toBe(false);
+		expect('allowCoveredOptions' in parsed).toBe(false);
 	});
 
 	it('rejects short selling in a cash portfolio', () => {

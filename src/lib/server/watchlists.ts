@@ -7,13 +7,16 @@ import {
 	tradingWatchlists
 } from '$lib/server/db/schema/trading';
 import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
-import { MassiveHttpError, type MarketDataRestProvider } from '$lib/server/market-data';
+import type { MarketDataRestProvider } from '$lib/server/market-data';
+import type { SnapshotFieldAccess } from '$lib/server/market-view';
 import { instrumentInsertValues } from '$lib/server/trading/drizzle-repository';
 import {
-	mergeWatchlistSnapshots,
+	hydrateWatchlistSnapshots,
+	type WatchlistMarketClock
+} from '$lib/server/watchlist-market-data';
+import {
 	resolveExactActiveStock,
 	unavailableWatchlistRows,
-	type SavedWatchlistItem,
 	type SavedWatchlistRow
 } from './watchlists.logic';
 
@@ -25,7 +28,6 @@ export {
 } from './watchlists.logic';
 
 const DEFAULT_WATCHLIST_NAME = 'Watchlist';
-const SNAPSHOT_BATCH_SIZE = 250;
 
 type ApplicationDatabase = typeof db;
 type TransactionClient = Parameters<Parameters<ApplicationDatabase['transaction']>[0]>[0];
@@ -90,33 +92,6 @@ async function ensureDefaultWatchlist(
 	return watchlist ?? null;
 }
 
-function snapshotFailureMessage(cause: unknown): string {
-	if (cause instanceof MassiveHttpError && (cause.status === 401 || cause.status === 403)) {
-		return 'Massive denied snapshot access for the configured credentials or stock plan.';
-	}
-	if (cause instanceof MassiveHttpError && cause.status === 429) {
-		return 'Massive snapshot request limit reached; saved symbol remains available.';
-	}
-	return 'Massive snapshots are temporarily unavailable; saved symbol remains available.';
-}
-
-async function hydrateSnapshots(
-	items: readonly SavedWatchlistItem[],
-	provider: MarketDataRestProvider
-): Promise<SavedWatchlistRow[]> {
-	const hydrated: SavedWatchlistRow[] = [];
-	for (let start = 0; start < items.length; start += SNAPSHOT_BATCH_SIZE) {
-		const batch = items.slice(start, start + SNAPSHOT_BATCH_SIZE);
-		try {
-			const page = await provider.getUnifiedSnapshots(batch.map((item) => item.symbol));
-			hydrated.push(...mergeWatchlistSnapshots(batch, page.items));
-		} catch (cause) {
-			hydrated.push(...unavailableWatchlistRows(batch, snapshotFailureMessage(cause)));
-		}
-	}
-	return hydrated;
-}
-
 export async function loadOwnedDefaultWatchlist(
 	ownerUserId: string,
 	portfolioId: string,
@@ -154,6 +129,8 @@ export async function loadOwnedDefaultWatchlist(
 	if (items.length === 0) return { ...watchlist, items: [] };
 
 	let snapshotProvider = provider;
+	let snapshotFieldAccess: SnapshotFieldAccess;
+	let marketClock: WatchlistMarketClock;
 	try {
 		const capability = getMarketEnvironment().capabilities.stocks;
 		if (!capability.snapshots) {
@@ -165,6 +142,24 @@ export async function loadOwnedDefaultWatchlist(
 				)
 			};
 		}
+		if (
+			!capability.minuteBars ||
+			capability.executionMode === null ||
+			capability.delayMinutes === null
+		) {
+			return {
+				...watchlist,
+				items: unavailableWatchlistRows(
+					items,
+					'Completed minute aggregates are unavailable on the configured Massive stock plan.'
+				)
+			};
+		}
+		snapshotFieldAccess = { quotes: capability.quotes, trades: capability.trades };
+		marketClock = {
+			mode: capability.executionMode,
+			delayMinutes: capability.delayMinutes
+		};
 		snapshotProvider ??= getMarketDataProvider();
 	} catch {
 		return {
@@ -176,7 +171,15 @@ export async function loadOwnedDefaultWatchlist(
 		};
 	}
 
-	return { ...watchlist, items: await hydrateSnapshots(items, snapshotProvider) };
+	return {
+		...watchlist,
+		items: await hydrateWatchlistSnapshots({
+			items,
+			provider: snapshotProvider,
+			access: snapshotFieldAccess,
+			clock: marketClock
+		})
+	};
 }
 
 export async function addStockToOwnedDefaultWatchlist(input: {

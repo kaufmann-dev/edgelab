@@ -4,7 +4,6 @@ export const SIMULATION_EXECUTION_MODEL = executionModelSchema.parse({
 	version: DEFAULT_EXECUTION_MODEL_VERSION,
 	latencyMilliseconds: 0,
 	stockSlippageBps: '2',
-	optionSlippageBps: '5',
 	participationRate: '0.25'
 });
 

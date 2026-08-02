@@ -40,7 +40,10 @@ export const GET: RequestHandler = async ({ params }) => {
 			(item) => item.assetClass === 'stocks' && item.symbol === parsed.data
 		);
 		if (!snapshot) return json({ error: 'No stock snapshot was found.' }, { status: 404 });
-		return json({ snapshot: serializeSnapshot(snapshot), feed: environment.capabilities.stocks });
+		return json({
+			snapshot: serializeSnapshot(snapshot, environment.capabilities.stocks),
+			feed: environment.capabilities.stocks
+		});
 	} catch (cause) {
 		if (cause instanceof MassiveHttpError) {
 			return json({ error: cause.message }, { status: cause.status === 429 ? 429 : 502 });

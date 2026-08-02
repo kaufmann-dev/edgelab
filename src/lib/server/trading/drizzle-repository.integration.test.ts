@@ -34,7 +34,7 @@ describeDatabase('DrizzleTradingRepository integration', () => {
 				name: 'Repository integration',
 				startingCash: '100000',
 				dataMode: 'realtime',
-				executionModelVersion: 'sim-execution-v1',
+				executionModelVersion: 'sim-execution-v2',
 				riskModelVersion: 'risk-policy-v1',
 				createdAt: now
 			})

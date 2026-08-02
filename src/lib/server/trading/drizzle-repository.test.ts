@@ -4,6 +4,7 @@ import { optionInstrumentSchema } from '../market-data/types';
 import {
 	DrizzleTradingRepository,
 	TradingRepositoryDataError,
+	assertCanonicalOrderInsert,
 	instrumentInsertValues,
 	mapAcceptedOrderRows,
 	mapInstrumentRow,
@@ -89,7 +90,7 @@ function orderRow(overrides: Partial<OrderRow> = {}): OrderRow {
 		trailingWatermark: null,
 		trailingStopPrice: null,
 		extendedHours: false,
-		executionModelVersion: 'sim-execution-v1',
+		executionModelVersion: 'sim-execution-v2',
 		acceptedAt: now,
 		eligibleAt: new Date(now.getTime() + 250),
 		triggeredAt: null,
@@ -111,8 +112,8 @@ function orderLegRow(overrides: Partial<OrderLegRow> = {}): OrderLegRow {
 		legNumber: 1,
 		side: 'buy',
 		positionEffect: 'open',
-		ratioQuantity: '2.00000000',
-		filledQuantity: '2.00000000',
+		ratioQuantity: '1.00000000',
+		filledQuantity: '1.00000000',
 		...overrides
 	};
 }
@@ -129,34 +130,61 @@ describe('Drizzle trading row mappers', () => {
 		expect(instrument.additionalUnderlyings[0]?.amount.toFixed(2)).toBe('12.50');
 	});
 
-	it('reconstructs an accepted order and sorts its resolved legs', () => {
-		const secondInstrument = optionRow({
-			id: '00000000-0000-4000-8000-000000000005',
-			symbol: 'O:AAPL260619C00130000',
-			strikePrice: '130.00000000'
+	it('reconstructs a single-leg accepted order', () => {
+		const instrument = optionRow({
+			contractMultiplier: '100.00000000',
+			additionalUnderlyings: []
 		});
-		const secondLeg = orderLegRow({
-			id: '00000000-0000-4000-8000-000000000006',
-			instrumentId: secondInstrument.id,
-			legNumber: 2,
-			side: 'sell',
-			ratioQuantity: '1.00000000',
-			filledQuantity: '1.00000000'
-		});
-		const order = mapAcceptedOrderRows(orderRow(), [
-			{ leg: secondLeg, instrument: secondInstrument },
-			{ leg: orderLegRow(), instrument: optionRow() }
-		]);
+		const order = mapAcceptedOrderRows(orderRow(), [{ leg: orderLegRow(), instrument }]);
 
-		expect(order.legs.map((leg) => leg.symbol)).toEqual([
-			'O:AAPL260619C00123456',
-			'O:AAPL260619C00130000'
-		]);
+		expect(order.legs.map((leg) => leg.symbol)).toEqual(['O:AAPL260619C00123456']);
 		expect(order.quantity.toFixed()).toBe('3');
 		expect(order.limitPrice?.toFixed(8)).toBe('2.34567891');
 		expect(order.filledQuantity.toFixed()).toBe('1');
-		expect(order.executionModelVersion).toBe('sim-execution-v1');
+		expect(order.executionModelVersion).toBe('sim-execution-v2');
 		expect(order.eligibleAt.toISOString()).toBe('2026-01-02T14:30:00.250Z');
+	});
+
+	it('rejects noncanonical current-model orders before persistence', () => {
+		const order = mapAcceptedOrderRows(orderRow(), [
+			{
+				leg: orderLegRow(),
+				instrument: optionRow({
+					contractMultiplier: '100.00000000',
+					additionalUnderlyings: []
+				})
+			}
+		]);
+		const leg = order.legs[0];
+		if (!leg) throw new Error('Expected one order leg');
+
+		expect(() => assertCanonicalOrderInsert(order)).not.toThrow();
+		expect(() =>
+			assertCanonicalOrderInsert({ ...order, executionModelVersion: 'sim-execution-v1' })
+		).toThrow(TradingRepositoryDataError);
+		expect(() =>
+			assertCanonicalOrderInsert({ ...order, legs: [leg, { ...leg, symbol: `${leg.symbol}X` }] })
+		).toThrow(TradingRepositoryDataError);
+		expect(() =>
+			assertCanonicalOrderInsert({
+				...order,
+				legs: [{ ...leg, ratioQuantity: new Decimal(2) }]
+			})
+		).toThrow(TradingRepositoryDataError);
+		expect(() =>
+			assertCanonicalOrderInsert({
+				...order,
+				legs: [{ ...leg, side: 'sell', positionEffect: 'open' }]
+			})
+		).toThrow(TradingRepositoryDataError);
+		expect(() =>
+			assertCanonicalOrderInsert({
+				...order,
+				type: 'market',
+				timeInForce: 'gtc',
+				limitPrice: undefined
+			})
+		).toThrow(TradingRepositoryDataError);
 	});
 
 	it('maps positions and rejects structurally invalid instrument rows', () => {

@@ -103,6 +103,10 @@ export function logicalMarketTime(attemptAt: Date, delayMilliseconds: number): D
 	return new Date(attemptAt.getTime() - delayMilliseconds);
 }
 
+export function usEquityMarketDate(at: Date): string {
+	return dateKey(newYorkParts(at));
+}
+
 export function usEquitySessionAt(
 	at: Date,
 	holidays: readonly MassiveMarketHoliday[]
@@ -177,6 +181,17 @@ export function dayOrderExpiration(input: {
 		return new Date(logicalClose.getTime() + input.delayMilliseconds);
 	}
 	throw new Error('Could not find a market-session boundary for the DAY order');
+}
+
+/** Returns the New York trading date of the session assigned to a DAY order. */
+export function dayOrderMarketDate(input: {
+	acceptedAt: Date;
+	delayMilliseconds: number;
+	extendedHours: boolean;
+	holidays: readonly MassiveMarketHoliday[];
+}): string {
+	const expiresAt = dayOrderExpiration(input);
+	return usEquityMarketDate(logicalMarketTime(expiresAt, input.delayMilliseconds));
 }
 
 export async function getMassiveMarketHolidays(

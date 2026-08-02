@@ -1,5 +1,10 @@
-import type { Instrument, MarketSnapshot, StockInstrument } from '$lib/server/market-data';
-import { serializeSnapshot } from '$lib/server/market-view';
+import type {
+	Instrument,
+	MarketSnapshot,
+	NormalizedBar,
+	StockInstrument
+} from '$lib/server/market-data';
+import { serializeSnapshot, type SnapshotFieldAccess } from '$lib/server/market-view';
 
 export interface SavedWatchlistItem {
 	id: string;
@@ -52,29 +57,59 @@ export function unavailableWatchlistRows(
 
 export function mergeWatchlistSnapshots(
 	items: readonly SavedWatchlistItem[],
-	snapshots: readonly MarketSnapshot[]
+	snapshots: readonly MarketSnapshot[],
+	access: SnapshotFieldAccess,
+	completedMinuteBars: readonly NormalizedBar[] = [],
+	missingSnapshotReason = 'Massive returned no current snapshot for this symbol.'
 ): SavedWatchlistRow[] {
 	const snapshotsBySymbol = new Map(
 		snapshots
 			.filter((snapshot) => snapshot.assetClass === 'stocks')
 			.map((snapshot) => [snapshot.symbol.toUpperCase(), snapshot] as const)
 	);
+	const completedMinutesBySymbol = new Map(
+		completedMinuteBars
+			.filter(
+				(bar) =>
+					bar.assetClass === 'stocks' &&
+					bar.interval === 'minute' &&
+					bar.sourceTime.getTime() === bar.endTime.getTime()
+			)
+			.map((bar) => [bar.symbol.toUpperCase(), bar] as const)
+	);
 
 	return items.map((item) => {
-		const snapshot = snapshotsBySymbol.get(item.symbol.toUpperCase());
-		if (!snapshot) {
+		const symbol = item.symbol.toUpperCase();
+		const snapshot = snapshotsBySymbol.get(symbol);
+		const completedMinute = completedMinutesBySymbol.get(symbol);
+		if (!snapshot && !completedMinute) {
 			return {
 				...item,
 				snapshot: {
 					status: 'unavailable' as const,
-					reason: 'Massive returned no current snapshot for this symbol.'
+					reason: missingSnapshotReason
 				}
 			};
 		}
+		const hydratedSnapshot: MarketSnapshot = snapshot
+			? !snapshot.lastMinute && completedMinute?.mode === snapshot.mode
+				? { ...snapshot, lastMinute: completedMinute }
+				: snapshot
+			: {
+					assetClass: 'stocks',
+					symbol: item.symbol,
+					name: item.name,
+					mode: completedMinute!.mode,
+					lastMinute: completedMinute,
+					asOf: completedMinute!.receivedAt
+				};
 
 		return {
 			...item,
-			snapshot: { status: 'available' as const, data: serializeSnapshot(snapshot) }
+			snapshot: {
+				status: 'available' as const,
+				data: serializeSnapshot(hydratedSnapshot, access)
+			}
 		};
 	});
 }

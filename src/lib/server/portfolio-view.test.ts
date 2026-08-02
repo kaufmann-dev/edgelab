@@ -1,13 +1,34 @@
 import Decimal from 'decimal.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MarketSnapshot } from '$lib/server/market-data';
+import {
+	MassiveHttpError,
+	type AssetClass,
+	type MarketDataMode,
+	type MarketSnapshot,
+	type NormalizedBar
+} from '$lib/server/market-data';
 import type { PositionRecord } from './portfolio-read';
 
 const marketMocks = vi.hoisted(() => ({
 	getUnifiedSnapshots: vi.fn(),
+	getBars: vi.fn(),
 	capabilities: {
-		stocks: { snapshots: true },
-		options: { snapshots: true }
+		stocks: {
+			snapshots: true,
+			minuteBars: true,
+			quotes: true,
+			trades: true,
+			executionMode: 'realtime' as MarketDataMode | null,
+			delayMinutes: 0 as number | null
+		},
+		options: {
+			snapshots: true,
+			minuteBars: true,
+			quotes: true,
+			trades: true,
+			executionMode: 'realtime' as MarketDataMode | null,
+			delayMinutes: 0 as number | null
+		}
 	}
 }));
 
@@ -16,7 +37,8 @@ vi.mock('$lib/server/market', () => ({
 		capabilities: marketMocks.capabilities
 	}),
 	getMarketDataProvider: () => ({
-		getUnifiedSnapshots: marketMocks.getUnifiedSnapshots
+		getUnifiedSnapshots: marketMocks.getUnifiedSnapshots,
+		getBars: marketMocks.getBars
 	})
 }));
 
@@ -65,11 +87,56 @@ function snapshot(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
 	};
 }
 
+function completedBar(
+	input: {
+		assetClass?: AssetClass;
+		symbol?: string;
+		mode?: MarketDataMode;
+		start?: string;
+		close?: string;
+	} = {}
+): NormalizedBar {
+	const assetClass = input.assetClass ?? 'stocks';
+	const symbol = input.symbol ?? 'AAPL';
+	const mode = input.mode ?? 'delayed';
+	const startTime = new Date(input.start ?? '2026-08-01T15:04:00.000Z');
+	const endTime = new Date(startTime.getTime() + 60_000);
+	const close = new Decimal(input.close ?? '100.5');
+	return {
+		kind: 'bar',
+		assetClass,
+		symbol,
+		mode,
+		interval: 'minute',
+		startTime,
+		endTime,
+		open: close,
+		high: close,
+		low: close,
+		close,
+		volume: new Decimal(1_000),
+		sourceTime: endTime,
+		receivedAt: new Date('2026-08-01T15:20:30.000Z'),
+		rawTimestamp: String(startTime.getTime())
+	};
+}
+
 describe('buildPositionView valuation', () => {
 	beforeEach(() => {
 		marketMocks.getUnifiedSnapshots.mockReset();
+		marketMocks.getBars.mockReset().mockResolvedValue({ items: [] });
 		marketMocks.capabilities.stocks.snapshots = true;
+		marketMocks.capabilities.stocks.minuteBars = true;
+		marketMocks.capabilities.stocks.quotes = true;
+		marketMocks.capabilities.stocks.trades = true;
+		marketMocks.capabilities.stocks.executionMode = 'realtime';
+		marketMocks.capabilities.stocks.delayMinutes = 0;
 		marketMocks.capabilities.options.snapshots = true;
+		marketMocks.capabilities.options.minuteBars = true;
+		marketMocks.capabilities.options.quotes = true;
+		marketMocks.capabilities.options.trades = true;
+		marketMocks.capabilities.options.executionMode = 'realtime';
+		marketMocks.capabilities.options.delayMinutes = 0;
 	});
 
 	it('returns an exact complete valuation for a cash-only portfolio', async () => {
@@ -200,6 +267,8 @@ describe('buildPositionView valuation', () => {
 		expect(marketMocks.getUnifiedSnapshots).toHaveBeenCalledWith(['AAPL', 'SPY']);
 		expect(view.benchmarkPrice?.toFixed()).toBe('401');
 		expect(view.valuation).not.toBeNull();
+		expect(view.valuation?.asOf.toISOString()).toBe('2026-08-01T12:05:00.000Z');
+		expect(view.marketFeed?.asOf).toBe('2026-08-01T12:07:00.000Z');
 	});
 
 	it('still marks supported stocks when option snapshots are unavailable', async () => {
@@ -229,6 +298,224 @@ describe('buildPositionView valuation', () => {
 		expect(view.positions.find((row) => row.symbol === 'AAPL')?.mark).toBe(111);
 		expect(view.positions.find((row) => row.assetType === 'option')?.mark).toBeNull();
 		expect(view.marketError).toContain('options snapshots');
+	});
+
+	it('uses a delayed completed aggregate for Stocks Starter and ignores unentitled snapshot prices', async () => {
+		const snapshotAsOf = new Date('2026-08-01T15:20:30.000Z');
+		marketMocks.capabilities.stocks.quotes = false;
+		marketMocks.capabilities.stocks.trades = false;
+		marketMocks.capabilities.stocks.executionMode = 'delayed';
+		marketMocks.capabilities.stocks.delayMinutes = 15;
+		marketMocks.getUnifiedSnapshots.mockResolvedValue({
+			items: [
+				snapshot({
+					mode: 'delayed',
+					quote: {
+						kind: 'quote',
+						assetClass: 'stocks',
+						symbol: 'AAPL',
+						mode: 'delayed',
+						bidPrice: new Decimal('110'),
+						askPrice: new Decimal('112'),
+						bidSize: new Decimal(1),
+						askSize: new Decimal(1),
+						sourceTime: snapshotAsOf,
+						receivedAt: snapshotAsOf,
+						rawTimestamp: String(snapshotAsOf.getTime())
+					},
+					lastTrade: {
+						kind: 'trade',
+						assetClass: 'stocks',
+						symbol: 'AAPL',
+						mode: 'delayed',
+						price: new Decimal('109'),
+						size: new Decimal(1),
+						conditions: [],
+						sourceTime: snapshotAsOf,
+						receivedAt: snapshotAsOf,
+						rawTimestamp: String(snapshotAsOf.getTime())
+					},
+					lastMinute: completedBar({
+						mode: 'delayed',
+						start: '2026-08-01T15:05:00.000Z',
+						close: '500'
+					}),
+					asOf: snapshotAsOf
+				})
+			]
+		});
+		marketMocks.getBars.mockResolvedValue({ items: [completedBar()] });
+
+		const view = await buildPositionView({
+			positions: [position()],
+			cashBalance: '1000',
+			reservedCash: '0',
+			realizedPnl: '0',
+			valuationTime: new Date('2026-08-01T15:20:42.000Z')
+		});
+
+		expect(view.positions[0].mark).toBe(100.5);
+		expect(view.valuation?.netMarketValue.toFixed()).toBe('201');
+		expect(view.marketFeed).toEqual({
+			state: 'delayed',
+			modeLabel: '15 MIN DELAYED',
+			asOf: '2026-08-01T15:05:00.000Z'
+		});
+		expect(marketMocks.getBars).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assetClass: 'stocks',
+				symbol: 'AAPL',
+				timespan: 'minute',
+				to: String(Date.parse('2026-08-01T15:05:00.000Z') - 1)
+			})
+		);
+	});
+
+	it('uses the Options Starter clock for a completed option aggregate mark', async () => {
+		const optionSymbol = 'O:AAPL260821C00200000';
+		marketMocks.capabilities.options.quotes = false;
+		marketMocks.capabilities.options.trades = false;
+		marketMocks.capabilities.options.executionMode = 'delayed';
+		marketMocks.capabilities.options.delayMinutes = 15;
+		marketMocks.getUnifiedSnapshots.mockResolvedValue({
+			items: [
+				snapshot({
+					assetClass: 'options',
+					symbol: optionSymbol,
+					name: 'AAPL Aug 21 2026 $200 Call',
+					mode: 'delayed',
+					quote: undefined,
+					lastTrade: undefined,
+					lastMinute: undefined
+				})
+			]
+		});
+		marketMocks.getBars.mockResolvedValue({
+			items: [
+				completedBar({
+					assetClass: 'options',
+					symbol: optionSymbol,
+					mode: 'delayed',
+					close: '3.25'
+				})
+			]
+		});
+
+		const view = await buildPositionView({
+			positions: [
+				position({
+					id: 'position-option',
+					instrumentId: 'instrument-option',
+					symbol: optionSymbol,
+					name: 'AAPL Aug 21 2026 $200 Call',
+					assetClass: 'options',
+					underlyingSymbol: 'AAPL',
+					expirationDate: '2026-08-21',
+					contractMultiplier: '100',
+					quantity: '1',
+					averageCost: '4'
+				})
+			],
+			cashBalance: '1000',
+			reservedCash: '0',
+			realizedPnl: '0',
+			valuationTime: new Date('2026-08-01T15:20:42.000Z')
+		});
+
+		expect(view.positions[0].mark).toBe(3.25);
+		expect(view.positions[0].marketValue).toBe(325);
+		expect(view.valuation?.asOf.toISOString()).toBe('2026-08-01T15:05:00.000Z');
+		expect(view.marketFeed?.state).toBe('delayed');
+		expect(marketMocks.getBars).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assetClass: 'options',
+				symbol: optionSymbol,
+				timespan: 'minute',
+				to: String(Date.parse('2026-08-01T15:05:00.000Z') - 1)
+			})
+		);
+	});
+
+	it('loads a completed aggregate when Massive omits a requested snapshot item', async () => {
+		marketMocks.capabilities.stocks.quotes = false;
+		marketMocks.capabilities.stocks.trades = false;
+		marketMocks.capabilities.stocks.executionMode = 'delayed';
+		marketMocks.capabilities.stocks.delayMinutes = 15;
+		marketMocks.getUnifiedSnapshots.mockResolvedValue({ items: [] });
+		marketMocks.getBars.mockResolvedValue({ items: [completedBar()] });
+
+		const view = await buildPositionView({
+			positions: [position()],
+			cashBalance: '1000',
+			reservedCash: '0',
+			realizedPnl: '0',
+			valuationTime: new Date('2026-08-01T15:20:42.000Z')
+		});
+
+		expect(view.positions[0].mark).toBe(100.5);
+		expect(view.valuation).not.toBeNull();
+		expect(view.marketError).toBeNull();
+	});
+
+	it.each([401, 403])(
+		'does not hide a %i snapshot access failure behind aggregate marks',
+		async (status) => {
+			marketMocks.capabilities.stocks.quotes = false;
+			marketMocks.capabilities.stocks.trades = false;
+			marketMocks.capabilities.stocks.executionMode = 'delayed';
+			marketMocks.capabilities.stocks.delayMinutes = 15;
+			marketMocks.getUnifiedSnapshots.mockRejectedValue(
+				new MassiveHttpError(status, 'snapshot access denied')
+			);
+			marketMocks.getBars.mockResolvedValue({ items: [completedBar()] });
+
+			const view = await buildPositionView({
+				positions: [position()],
+				cashBalance: '1000',
+				reservedCash: '0',
+				realizedPnl: '0',
+				valuationTime: new Date('2026-08-01T15:20:42.000Z')
+			});
+
+			expect(view.positions[0].mark).toBeNull();
+			expect(view.valuation).toBeNull();
+			expect(view.marketError).toBe(
+				'Massive denied market-data access for the configured credentials or market-data plan.'
+			);
+			expect(marketMocks.getBars).not.toHaveBeenCalled();
+		}
+	);
+
+	it.each([401, 403])('surfaces a %i aggregate access failure', async (status) => {
+		marketMocks.capabilities.stocks.quotes = false;
+		marketMocks.capabilities.stocks.trades = false;
+		marketMocks.capabilities.stocks.executionMode = 'delayed';
+		marketMocks.capabilities.stocks.delayMinutes = 15;
+		marketMocks.getUnifiedSnapshots.mockResolvedValue({
+			items: [
+				snapshot({
+					mode: 'delayed',
+					quote: undefined,
+					lastTrade: undefined,
+					lastMinute: undefined
+				})
+			]
+		});
+		marketMocks.getBars.mockRejectedValue(new MassiveHttpError(status, 'aggregate access denied'));
+
+		const view = await buildPositionView({
+			positions: [position()],
+			cashBalance: '1000',
+			reservedCash: '0',
+			realizedPnl: '0',
+			valuationTime: new Date('2026-08-01T15:20:42.000Z')
+		});
+
+		expect(view.positions[0].mark).toBeNull();
+		expect(view.valuation).toBeNull();
+		expect(view.marketError).toBe(
+			'Massive denied market-data access for the configured credentials or market-data plan.'
+		);
 	});
 
 	it('falls back from a non-positive quote to benchmark trade and bar prices', async () => {

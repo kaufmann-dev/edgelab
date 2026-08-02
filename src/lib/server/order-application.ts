@@ -8,14 +8,13 @@ import {
 	supportsOptionsExecution,
 	supportsStockSimulation,
 	type Instrument,
-	type NormalizedBar,
-	type NormalizedQuote
+	type MassiveMarketHoliday,
+	type NormalizedBar
 } from '$lib/server/market-data';
 import {
+	dayOrderMarketDate,
 	getMassiveMarketHolidays,
-	logicalMarketTime,
-	orderAllowsSession,
-	usEquitySessionAt
+	usEquityMarketDate
 } from '$lib/server/market-session';
 import { notifyOrdersChanged } from '$lib/server/live-order-execution';
 import {
@@ -25,16 +24,12 @@ import {
 } from '$lib/server/portfolio-read';
 import {
 	acceptedOrderMatchesDraft,
-	applyFillToLedger,
-	applyStrategyFill,
-	calculateQuoteFill,
 	createAcceptedOrder,
 	drizzleTradingRepository,
 	orderDraftSchema,
 	previewOrder,
-	transitionOrder,
 	type AcceptedOrder,
-	type ExecutableQuoteContext,
+	type ExecutableBarContext,
 	type OrderDraft,
 	type OrderPreview,
 	type PortfolioAccountState,
@@ -44,8 +39,8 @@ import {
 	SIMULATION_FEE_MODEL
 } from '$lib/server/trading';
 
-const MAX_EXECUTABLE_QUOTE_AGE_MILLISECONDS = 60_000;
-const EXECUTABLE_QUOTE_FUTURE_TOLERANCE_MILLISECONDS = 1_000;
+const MAX_REFERENCE_BAR_AGE_MILLISECONDS = 60_000;
+const REFERENCE_BAR_FUTURE_TOLERANCE_MILLISECONDS = 1_000;
 
 export interface ApplicationViolation {
 	code: string;
@@ -112,7 +107,7 @@ function assertExecutableMarketAccess(draft: OrderDraft, dataMode: 'realtime' | 
 			throw new OrderApplicationError(
 				assetClass === 'stocks'
 					? 'Stock simulation requires Massive snapshots, WebSockets, and second aggregates. Stocks Starter or better provides these capabilities.'
-					: 'Option trading is disabled because the configured option plan does not provide the quote and trade feeds required by the execution model.',
+					: 'Option simulation requires Massive snapshots, WebSockets, minute aggregates, and second aggregates on the same portfolio clock. Options Starter or better provides these aggregate capabilities.',
 				422
 			);
 		}
@@ -126,6 +121,78 @@ function assertExecutableMarketAccess(draft: OrderDraft, dataMode: 'realtime' | 
 	if (assetClasses.has('stocks') && draft.type === 'trailing_stop') {
 		throw new OrderApplicationError(
 			'Trailing-stop orders are unavailable for aggregate-priced stocks. Use a stop or stop-limit order.',
+			422
+		);
+	}
+}
+
+export function assertSupportedOptionOrderSurface(
+	draft: OrderDraft,
+	instruments: ReadonlyMap<string, Instrument>,
+	firstEligibleMarketDate: string
+): void {
+	const resolvedLegs = draft.legs.map((leg) => ({ leg, instrument: instruments.get(leg.symbol) }));
+	if (!resolvedLegs.some(({ instrument }) => instrument?.assetClass === 'options')) return;
+
+	if (
+		resolvedLegs.length !== 1 ||
+		resolvedLegs[0]?.instrument?.assetClass !== 'options' ||
+		instruments.size !== 1
+	) {
+		throw new OrderApplicationError(
+			'Option simulation supports exactly one option contract per order.',
+			422
+		);
+	}
+
+	const resolvedLeg = resolvedLegs[0];
+	if (!resolvedLeg || resolvedLeg.instrument?.assetClass !== 'options') {
+		throw new OrderApplicationError(
+			'Option simulation supports exactly one option contract per order.',
+			422
+		);
+	}
+	const { leg, instrument } = resolvedLeg;
+	if (!leg.ratioQuantity.equals(1)) {
+		throw new OrderApplicationError('Single-leg option orders require a leg ratio of 1.', 422);
+	}
+	const supportedPositionEffect =
+		(leg.side === 'buy' && leg.positionEffect === 'open') ||
+		(leg.side === 'sell' && leg.positionEffect === 'close');
+	if (!supportedPositionEffect) {
+		throw new OrderApplicationError(
+			'Option simulation supports buy-to-open and sell-to-close orders only.',
+			422
+		);
+	}
+	if (!instrument.multiplier.equals(100) || instrument.additionalUnderlyings.length > 0) {
+		throw new OrderApplicationError(
+			'Option simulation supports only standard, unadjusted 100-share contracts.',
+			422
+		);
+	}
+	if (instrument.expirationDate <= firstEligibleMarketDate) {
+		throw new OrderApplicationError(
+			`Option contract ${instrument.symbol} expires on ${instrument.expirationDate}; expiration-day orders are not supported.`,
+			422
+		);
+	}
+	if (draft.type !== 'limit') {
+		throw new OrderApplicationError('Option simulation currently supports limit orders only.', 422);
+	}
+	if (draft.timeInForce !== 'day') {
+		throw new OrderApplicationError('Option simulation currently supports DAY orders only.', 422);
+	}
+	if (draft.extendedHours) {
+		throw new OrderApplicationError(
+			'Option simulation is limited to the regular US equity session.',
+			422
+		);
+	}
+	const expectedNetPriceEffect = leg.side === 'buy' ? 'debit' : 'credit';
+	if (draft.netPriceEffect !== expectedNetPriceEffect) {
+		throw new OrderApplicationError(
+			`A single-leg option ${leg.side} order must use a ${expectedNetPriceEffect} price effect.`,
 			422
 		);
 	}
@@ -152,70 +219,49 @@ async function resolveInstruments(draft: OrderDraft): Promise<Map<string, Instru
 	return instruments;
 }
 
-async function loadMarketMarks(input: {
+async function loadReferenceBars(input: {
 	draft: OrderDraft;
 	instruments: ReadonlyMap<string, Instrument>;
 	at: Date;
-}): Promise<{
-	quotes: Map<string, NormalizedQuote>;
-	bars: Map<string, NormalizedBar>;
-}> {
+}): Promise<Map<string, NormalizedBar>> {
 	const provider = getMarketDataProvider();
 	const environment = getMarketEnvironment();
 	const singleLegPriceOrder =
 		input.draft.legs.length === 1 && ['limit', 'stop_limit'].includes(input.draft.type);
 	const referenceInstruments = singleLegPriceOrder ? [] : [...input.instruments.values()];
-	const optionSymbols = referenceInstruments
-		.filter((instrument) => instrument.assetClass === 'options')
-		.map((instrument) => instrument.symbol);
 	const stockInstruments = referenceInstruments.filter(
 		(instrument) => instrument.assetClass === 'stocks'
 	);
-	const stockBarsPromise = (async () => {
-		if (stockInstruments.length === 0) return [];
-		const executionMode = environment.capabilities.stocks.executionMode;
-		const delayMinutes = environment.capabilities.stocks.delayMinutes;
-		if (!executionMode || delayMinutes === null) {
-			throw new OrderApplicationError(
-				'Stock aggregate pricing has no executable market-data clock.',
-				503
-			);
-		}
-		return Promise.all(
-			stockInstruments.map(async (instrument) => ({
-				symbol: instrument.symbol,
-				bar: await loadLatestCompletedMinuteBar({
-					provider,
-					assetClass: 'stocks',
-					symbol: instrument.symbol,
-					mode: executionMode,
-					delayMinutes,
-					at: input.at
-				})
-			}))
+	if (stockInstruments.length === 0) return new Map();
+	const executionMode = environment.capabilities.stocks.executionMode;
+	const delayMinutes = environment.capabilities.stocks.delayMinutes;
+	if (!executionMode || delayMinutes === null) {
+		throw new OrderApplicationError(
+			'Stock aggregate pricing has no executable market-data clock.',
+			503
 		);
-	})();
-	const [optionSnapshots, stockBars] = await Promise.all([
-		optionSymbols.length > 0
-			? provider.getUnifiedSnapshots(optionSymbols)
-			: Promise.resolve({ items: [] }),
-		stockBarsPromise
-	]);
-	return {
-		quotes: new Map(
-			optionSnapshots.items.flatMap((snapshot) =>
-				snapshot.quote ? [[snapshot.symbol, snapshot.quote]] : []
-			)
-		),
-		bars: new Map(stockBars.flatMap(({ symbol, bar }) => (bar ? [[symbol, bar]] : [])))
-	};
+	}
+	const stockBars = await Promise.all(
+		stockInstruments.map(async (instrument) => ({
+			symbol: instrument.symbol,
+			bar: await loadLatestCompletedMinuteBar({
+				provider,
+				assetClass: 'stocks',
+				symbol: instrument.symbol,
+				mode: executionMode,
+				delayMinutes,
+				at: input.at
+			})
+		}))
+	);
+	return new Map(stockBars.flatMap(({ symbol, bar }) => (bar ? [[symbol, bar]] : [])));
 }
 
-function quoteContextForOrder(input: {
+function barContextForOrder(input: {
 	instruments: ReadonlyMap<string, Instrument>;
 	expectedMode: 'realtime' | 'delayed';
 	attemptAt: Date;
-}): ExecutableQuoteContext {
+}): ExecutableBarContext {
 	const capabilities = getMarketEnvironment().capabilities;
 	const delays = new Set<number>();
 	for (const instrument of input.instruments.values()) {
@@ -245,40 +291,52 @@ function quoteContextForOrder(input: {
 		attemptAt: input.attemptAt,
 		expectedMode: input.expectedMode,
 		expectedDelayMilliseconds,
-		maxTransportAgeMilliseconds: MAX_EXECUTABLE_QUOTE_AGE_MILLISECONDS,
-		maxSourceAgeMilliseconds: MAX_EXECUTABLE_QUOTE_AGE_MILLISECONDS,
-		futureToleranceMilliseconds: EXECUTABLE_QUOTE_FUTURE_TOLERANCE_MILLISECONDS,
-		maxSourceSkewMilliseconds: MAX_EXECUTABLE_QUOTE_AGE_MILLISECONDS,
-		maxReceiptSkewMilliseconds: MAX_EXECUTABLE_QUOTE_AGE_MILLISECONDS
+		maxTransportAgeMilliseconds: MAX_REFERENCE_BAR_AGE_MILLISECONDS,
+		maxSourceAgeMilliseconds: MAX_REFERENCE_BAR_AGE_MILLISECONDS,
+		futureToleranceMilliseconds: REFERENCE_BAR_FUTURE_TOLERANCE_MILLISECONDS
 	};
 }
 
-function orderCanExecuteInCurrentSession(input: {
-	draft: OrderDraft;
+function firstEligibleMarketDateForOrder(input: {
 	instruments: ReadonlyMap<string, Instrument>;
-	quotes: ReadonlyMap<string, NormalizedQuote>;
-	quoteContext: ExecutableQuoteContext;
-	holidays: Awaited<ReturnType<typeof getMassiveMarketHolidays>>;
-}): boolean {
-	const allStockLegs = [...input.instruments.values()].every(
-		(instrument) => instrument.assetClass === 'stocks'
-	);
-	const allowed = (at: Date) =>
-		orderAllowsSession({
-			session: usEquitySessionAt(at, input.holidays),
-			extendedHours: input.draft.extendedHours,
-			orderType: input.draft.type,
-			allStockLegs
-		});
-	return (
-		allowed(
-			logicalMarketTime(input.quoteContext.attemptAt, input.quoteContext.expectedDelayMilliseconds)
-		) &&
-		input.draft.legs.every((leg) => {
-			const quote = input.quotes.get(leg.symbol);
-			return quote ? allowed(quote.sourceTime) : false;
-		})
-	);
+	expectedMode: 'realtime' | 'delayed';
+	at: Date;
+	holidays?: readonly MassiveMarketHoliday[];
+}): string {
+	const context = barContextForOrder({
+		instruments: input.instruments,
+		expectedMode: input.expectedMode,
+		attemptAt: input.at
+	});
+	if (![...input.instruments.values()].some((instrument) => instrument.assetClass === 'options')) {
+		return usEquityMarketDate(new Date(input.at.getTime() - context.expectedDelayMilliseconds));
+	}
+	if (!input.holidays) {
+		throw new OrderApplicationError('The market calendar is unavailable.', 503);
+	}
+	return dayOrderMarketDate({
+		acceptedAt: input.at,
+		delayMilliseconds: context.expectedDelayMilliseconds,
+		extendedHours: false,
+		holidays: input.holidays
+	});
+}
+
+async function loadMarketHolidaysForOrder(
+	instruments: ReadonlyMap<string, Instrument>,
+	at: Date
+): Promise<readonly MassiveMarketHoliday[] | undefined> {
+	if (![...instruments.values()].some((instrument) => instrument.assetClass === 'options')) {
+		return undefined;
+	}
+	try {
+		return await getMassiveMarketHolidays(at);
+	} catch (error) {
+		throw new OrderApplicationError(
+			`The market calendar is unavailable: ${error instanceof Error ? error.message : 'unknown provider error'}`,
+			503
+		);
+	}
 }
 
 async function validTradePlan(portfolioId: string, tradePlanId: string | undefined) {
@@ -370,34 +428,6 @@ async function addPolicyViolations(input: {
 				true
 			)
 		);
-	}
-	const openingShortOptions = optionLegs.filter(
-		(leg) => leg.side === 'sell' && leg.positionEffect === 'open'
-	);
-	if (openingShortOptions.length > 0) {
-		const spread = draft.legs.length > 1;
-		if (spread && !policy.allowDefinedRiskSpreads) {
-			violations.push(
-				policyViolation(
-					'defined_risk_spreads_disabled',
-					'Defined-risk option spreads are disabled for this portfolio.',
-					behavior,
-					undefined,
-					true
-				)
-			);
-		}
-		if (!spread && !policy.allowCoveredOptions) {
-			violations.push(
-				policyViolation(
-					'covered_options_disabled',
-					'Covered and cash-secured option writing is disabled for this portfolio.',
-					behavior,
-					undefined,
-					true
-				)
-			);
-		}
 	}
 	if (policy.requireTradePlan && !(await validTradePlan(draft.portfolioId, draft.tradePlanId))) {
 		violations.push(
@@ -503,17 +533,13 @@ async function evaluateInsideTransaction(input: {
 	ownerUserId: string;
 	draft: OrderDraft;
 	instruments: ReadonlyMap<string, Instrument>;
-	quotes: ReadonlyMap<string, NormalizedQuote>;
 	bars: ReadonlyMap<string, NormalizedBar>;
-	quoteAttemptAt: Date;
+	barAttemptAt: Date;
 	lockedPortfolio?: NonNullable<Awaited<ReturnType<TradingUnitOfWork['getPortfolioForUpdate']>>>;
 }): Promise<{
-	portfolio: NonNullable<Awaited<ReturnType<TradingUnitOfWork['getPortfolioForUpdate']>>>;
-	account: PortfolioAccountState;
 	preview: ApplicationOrderPreview;
-	quoteContext: ExecutableQuoteContext;
 }> {
-	const { uow, ownerUserId, draft, instruments, quotes, bars } = input;
+	const { uow, ownerUserId, draft, instruments, bars } = input;
 	const portfolio =
 		input.lockedPortfolio ?? (await uow.getPortfolioForUpdate(draft.portfolioId, ownerUserId));
 	if (!portfolio || portfolio.status !== 'active') {
@@ -537,27 +563,24 @@ async function evaluateInsideTransaction(input: {
 		openOrderCount: riskState.openOrderCount,
 		riskPolicy: {
 			allowShortStock: policy.allowShortEquity,
-			allowNakedOptions: false,
 			maxOrderNotional:
 				policy.maxOrderNotional === null ? undefined : new Decimal(policy.maxOrderNotional),
 			maxOpenOrders: 100,
-			maxOptionContractsPerOrder: 100,
-			quoteMaxAgeMilliseconds: 60_000
+			maxOptionContractsPerOrder: 100
 		}
 	};
-	const quoteContext = quoteContextForOrder({
+	const barContext = barContextForOrder({
 		instruments,
 		expectedMode: portfolio.dataMode,
-		attemptAt: input.quoteAttemptAt
+		attemptAt: input.barAttemptAt
 	});
 	const core = previewOrder({
 		draft,
 		instruments,
-		quotes,
 		bars,
 		account,
 		executionModel: SIMULATION_EXECUTION_MODEL,
-		quoteContext,
+		barContext,
 		feeModel: SIMULATION_FEE_MODEL
 	});
 	const violations: ApplicationViolation[] = core.violations.map((violation) => ({
@@ -567,10 +590,7 @@ async function evaluateInsideTransaction(input: {
 	violations.push(
 		...(await addPolicyViolations({ draft, instruments, portfolio, preview: core, policy }))
 	);
-	const marketModes = new Set([
-		...quotes.values().map((quote) => quote.mode),
-		...bars.values().map((bar) => bar.mode)
-	]);
+	const marketModes = new Set([...bars.values()].map((bar) => bar.mode));
 	if (marketModes.size > 0 && [...marketModes].some((mode) => mode !== portfolio.dataMode)) {
 		violations.push({
 			code: 'data_mode_mismatch',
@@ -583,7 +603,7 @@ async function evaluateInsideTransaction(input: {
 		core,
 		violations
 	};
-	return { portfolio, account, preview, quoteContext };
+	return { preview };
 }
 
 export async function previewSimulationOrder(input: {
@@ -597,18 +617,28 @@ export async function previewSimulationOrder(input: {
 	}
 	assertExecutableMarketAccess(draft, portfolio.dataMode);
 	const instruments = await resolveInstruments(draft);
+	const holidays = await loadMarketHolidaysForOrder(instruments, new Date());
 	const marketRequestAt = new Date();
-	const { quotes, bars } = await loadMarketMarks({ draft, instruments, at: marketRequestAt });
-	const quoteAttemptAt = new Date();
+	const bars = await loadReferenceBars({ draft, instruments, at: marketRequestAt });
+	const barAttemptAt = new Date();
+	assertSupportedOptionOrderSurface(
+		draft,
+		instruments,
+		firstEligibleMarketDateForOrder({
+			instruments,
+			expectedMode: portfolio.dataMode,
+			at: barAttemptAt,
+			holidays
+		})
+	);
 	return drizzleTradingRepository.transaction(draft.portfolioId, async (uow) => {
 		const result = await evaluateInsideTransaction({
 			uow,
 			ownerUserId: input.ownerUserId,
 			draft,
 			instruments,
-			quotes,
 			bars,
-			quoteAttemptAt
+			barAttemptAt
 		});
 		return result.preview;
 	});
@@ -642,22 +672,11 @@ export async function placeSimulationOrder(input: {
 		return { order: beforeMarketData.existing, preview: null, idempotent: true };
 	}
 	assertExecutableMarketAccess(draft, beforeMarketData.portfolio.dataMode);
-	const acceptedAt = new Date();
 	const instruments = await resolveInstruments(draft);
+	const holidays = await loadMarketHolidaysForOrder(instruments, new Date());
 	const marketRequestAt = new Date();
-	const { quotes, bars } = await loadMarketMarks({ draft, instruments, at: marketRequestAt });
-	const quoteAttemptAt = new Date();
-	const quoteExecutable = [...instruments.values()].every(
-		(instrument) => instrument.assetClass === 'options'
-	);
-	const holidays = quoteExecutable
-		? await getMassiveMarketHolidays(quoteAttemptAt).catch((error: unknown) => {
-				throw new OrderApplicationError(
-					`The market calendar is unavailable: ${error instanceof Error ? error.message : 'unknown provider error'}`,
-					503
-				);
-			})
-		: [];
+	const bars = await loadReferenceBars({ draft, instruments, at: marketRequestAt });
+	const barAttemptAt = new Date();
 
 	const result = await drizzleTradingRepository.transaction(draft.portfolioId, async (uow) => {
 		const lockedPortfolio = await uow.getPortfolioForUpdate(draft.portfolioId, input.ownerUserId);
@@ -679,9 +698,8 @@ export async function placeSimulationOrder(input: {
 			ownerUserId: input.ownerUserId,
 			draft,
 			instruments,
-			quotes,
 			bars,
-			quoteAttemptAt,
+			barAttemptAt,
 			lockedPortfolio
 		});
 		if (!evaluated.preview.accepted) {
@@ -691,8 +709,19 @@ export async function placeSimulationOrder(input: {
 				evaluated.preview
 			);
 		}
+		const acceptedAt = new Date();
+		assertSupportedOptionOrderSurface(
+			draft,
+			instruments,
+			firstEligibleMarketDateForOrder({
+				instruments,
+				expectedMode: lockedPortfolio.dataMode,
+				at: acceptedAt,
+				holidays
+			})
+		);
 
-		let order = createAcceptedOrder({
+		const order = createAcceptedOrder({
 			id: crypto.randomUUID(),
 			draft,
 			instruments,
@@ -713,78 +742,6 @@ export async function placeSimulationOrder(input: {
 			cashAmount: evaluated.preview.core.cashRequired,
 			shareQuantities: evaluated.preview.core.shareCollateral
 		});
-
-		const fill =
-			quoteExecutable &&
-			orderCanExecuteInCurrentSession({
-				draft,
-				instruments,
-				quotes,
-				quoteContext: evaluated.quoteContext,
-				holidays
-			})
-				? calculateQuoteFill({
-						order,
-						quotes,
-						executionModel: SIMULATION_EXECUTION_MODEL,
-						quoteContext: evaluated.quoteContext,
-						feeModel: SIMULATION_FEE_MODEL
-					})
-				: undefined;
-		if (fill) {
-			const remainingQuantityBeforeFill = order.quantity.minus(order.filledQuantity);
-			const fillId = crypto.randomUUID();
-			const applied = applyFillToLedger({
-				account: {
-					portfolioId: order.portfolioId,
-					cashBalance: evaluated.account.cashBalance,
-					positions: evaluated.account.positions
-				},
-				fill,
-				fillId,
-				entryId: () => crypto.randomUUID()
-			});
-			const priorStatus = order.status;
-			const priorRevision = order.revision;
-			order = applyStrategyFill(order, fill.strategyQuantity, fill.receivedAt);
-			await uow.insertFill({ id: fillId, fill });
-			await uow.insertLedgerEntries(applied.entries);
-			await uow.upsertPositions(order.portfolioId, applied.positionChanges);
-			if (!(await uow.updateOrder(order, priorRevision))) {
-				throw new OrderApplicationError('Order changed during execution.', 409);
-			}
-			await uow.appendOrderEvent({
-				orderId: order.id,
-				fromStatus: priorStatus,
-				toStatus: order.status,
-				at: fill.receivedAt,
-				reason: 'Filled by the quote execution model'
-			});
-			await uow.consumeOrderReservations({
-				orderId: order.id,
-				fillQuantity: fill.strategyQuantity,
-				remainingQuantityBeforeFill,
-				consumedAt: fill.receivedAt
-			});
-		}
-
-		if (order.timeInForce === 'ioc' && ['open', 'partially_filled'].includes(order.status)) {
-			const canceledAt = new Date();
-			const priorStatus = order.status;
-			const priorRevision = order.revision;
-			order = transitionOrder(order, 'canceled', { at: canceledAt });
-			if (!(await uow.updateOrder(order, priorRevision))) {
-				throw new OrderApplicationError('Order changed during IOC cancellation.', 409);
-			}
-			await uow.appendOrderEvent({
-				orderId: order.id,
-				fromStatus: priorStatus,
-				toStatus: order.status,
-				at: canceledAt,
-				reason: 'Immediate-or-cancel remainder canceled after the first execution attempt'
-			});
-			await uow.releaseOrderReservations(order.id);
-		}
 
 		return { order, preview: evaluated.preview, idempotent: false };
 	});

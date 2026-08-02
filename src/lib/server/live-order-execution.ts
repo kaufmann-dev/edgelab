@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { and, asc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
 	tradingInstruments,
 	tradingOrderLegs,
@@ -10,19 +10,20 @@ import {
 	assetClassSchema,
 	marketDataModeSchema,
 	type AssetClass,
+	type MassiveCapabilitySet,
 	type MassiveMarketHoliday,
 	type MarketDataMode,
 	type NormalizedBar,
 	type NormalizedMarketEvent,
-	type NormalizedQuote,
-	type NormalizedTrade
+	supportsOptionsExecution,
+	supportsStockSimulation
 } from '$lib/server/market-data';
 import { getMarketEnvironment } from '$lib/server/market';
 import {
 	dayOrderExpiration,
 	getMassiveMarketHolidays,
-	logicalMarketTime,
 	orderAllowsSession,
+	usEquityMarketDate,
 	usEquitySessionAt
 } from '$lib/server/market-session';
 import { marketStreamHub } from '$lib/server/market-stream';
@@ -32,30 +33,30 @@ import {
 	applyFillToLedger,
 	applyStrategyFill,
 	calculateBarFill,
-	calculateQuoteFill,
 	drizzleTradingRepository,
-	evaluateStopTrigger,
 	fillGrossAmount,
 	orderTypeSchema,
 	timeInForceSchema,
 	transitionOrder,
 	validateExecutableBar,
 	type AcceptedOrder,
+	type ExecutableBarContext,
 	type OrderType,
 	type StrategyFill,
 	type TimeInForce
 } from '$lib/server/trading';
 
 const REFRESH_INTERVAL_MILLISECONDS = 15_000;
-const MAX_QUOTE_AGE_MILLISECONDS = 60_000;
+const MAX_BAR_AGE_MILLISECONDS = 60_000;
 const BAR_ARRIVAL_GRACE_MILLISECONDS = 5_000;
 const SERIALIZATION_RETRY_DELAYS = [0, 25, 100] as const;
 const ACTIVE_ORDER_STATUSES = ['open', 'partially_filled'] as const;
-const STOP_ORDER_TYPES = new Set<OrderType>(['stop', 'stop_limit', 'trailing_stop']);
+const STOCK_AGGREGATE_ORDER_TYPES = new Set<OrderType>(['market', 'limit', 'stop', 'stop_limit']);
 
 export interface LiveOrderTopicLeg {
 	symbol: string;
 	assetClass: AssetClass;
+	ratioQuantity: Decimal;
 }
 
 export interface LiveOrderTopicInput {
@@ -75,6 +76,7 @@ interface TrackedOrder extends LiveOrderTopicInput {
 	portfolioId: string;
 	ownerUserId: string;
 	acceptedAt: Date;
+	executionModelVersion: string;
 	legs: LiveOrderTopicLeg[];
 }
 
@@ -109,23 +111,86 @@ export function isDayOrderExpired(input: {
 	);
 }
 
+export function supportsLiveAggregateOrder(
+	order: Pick<LiveOrderTopicInput, 'orderType' | 'timeInForce' | 'legs'>
+): boolean {
+	if (order.timeInForce === 'ioc' || order.legs.length !== 1) return false;
+	const leg = order.legs[0];
+	if (!leg?.ratioQuantity.equals(1)) return false;
+	return (
+		(leg.assetClass === 'stocks' && STOCK_AGGREGATE_ORDER_TYPES.has(order.orderType)) ||
+		(leg.assetClass === 'options' && order.orderType === 'limit' && order.timeInForce === 'day')
+	);
+}
+
+export function liveOrderDelayMilliseconds(
+	order: Pick<LiveOrderTopicInput, 'dataMode' | 'legs'>,
+	capabilities: MassiveCapabilitySet
+): number | undefined {
+	if (order.legs.length === 0) return undefined;
+	const delays = new Set<number>();
+	for (const leg of order.legs) {
+		const capability = capabilities[leg.assetClass];
+		const supported =
+			leg.assetClass === 'stocks'
+				? supportsStockSimulation(capability)
+				: supportsOptionsExecution(capabilities);
+		if (
+			!supported ||
+			capability.executionMode !== order.dataMode ||
+			capability.delayMinutes === null ||
+			(order.dataMode === 'realtime' ? capability.delayMinutes !== 0 : capability.delayMinutes <= 0)
+		) {
+			return undefined;
+		}
+		delays.add(capability.delayMinutes * 60 * 1_000);
+	}
+	if (delays.size !== 1) return undefined;
+	return delays.values().next().value;
+}
+
+function isLiveOrderCompatible(
+	order: LiveOrderTopicInput,
+	capabilities: MassiveCapabilitySet
+): boolean {
+	return (
+		supportsLiveAggregateOrder(order) &&
+		liveOrderDelayMilliseconds(order, capabilities) !== undefined
+	);
+}
+
+export function shouldEvaluateAggregateBar(input: {
+	bar: NormalizedBar;
+	barContext: ExecutableBarContext;
+	eligibleAt: Date;
+	lastEvaluatedBarEndAt?: Date;
+}): boolean {
+	if (input.lastEvaluatedBarEndAt && input.bar.endTime <= input.lastEvaluatedBarEndAt) {
+		return false;
+	}
+	return validateExecutableBar(input.bar, input.barContext, input.eligibleAt).executable;
+}
+
+export function hasOptionLegAtOrPastExpiration(
+	legs: readonly Pick<AcceptedOrder['legs'][number], 'instrument'>[],
+	marketAt: Date
+): boolean {
+	const marketDate = usEquityMarketDate(marketAt);
+	return legs.some(
+		(leg) => leg.instrument.assetClass === 'options' && leg.instrument.expirationDate <= marketDate
+	);
+}
+
 export function planLiveOrderTopics(orders: readonly LiveOrderTopicInput[]): LiveOrderTopicPlan {
 	const topics: Record<MarketDataMode, Record<AssetClass, Set<string>>> = {
 		realtime: { stocks: new Set<string>(), options: new Set<string>() },
 		delayed: { stocks: new Set<string>(), options: new Set<string>() }
 	};
 	for (const order of orders) {
-		if (order.timeInForce === 'ioc') continue;
-		for (const leg of order.legs) {
-			if (leg.assetClass === 'stocks') {
-				topics[order.dataMode].stocks.add(`A.${leg.symbol}`);
-			} else {
-				topics[order.dataMode].options.add(`Q.${leg.symbol}`);
-				if (order.legs.length === 1 && STOP_ORDER_TYPES.has(order.orderType)) {
-					topics[order.dataMode].options.add(`T.${leg.symbol}`);
-				}
-			}
-		}
+		if (!supportsLiveAggregateOrder(order)) continue;
+		const leg = order.legs[0];
+		if (!leg) continue;
+		topics[order.dataMode][leg.assetClass].add(`A.${leg.symbol}`);
 	}
 	return {
 		realtime: {
@@ -137,38 +202,6 @@ export function planLiveOrderTopics(orders: readonly LiveOrderTopicInput[]): Liv
 			options: [...topics.delayed.options].sort()
 		}
 	};
-}
-
-export function isQuoteEligibleForEvent(input: {
-	quote: Pick<NormalizedQuote, 'mode' | 'sourceTime'>;
-	expectedMode: MarketDataMode;
-	eventSourceTime: Date;
-	triggeredAt?: Date;
-	maxAgeMilliseconds?: number;
-}): boolean {
-	if (input.quote.mode !== input.expectedMode) return false;
-	const age = input.eventSourceTime.getTime() - input.quote.sourceTime.getTime();
-	if (age < 0 || age > (input.maxAgeMilliseconds ?? MAX_QUOTE_AGE_MILLISECONDS)) return false;
-	return !input.triggeredAt || input.quote.sourceTime >= input.triggeredAt;
-}
-
-export function isStopTradeEligible(input: {
-	trade: Pick<NormalizedTrade, 'mode' | 'sourceTime' | 'receivedAt'>;
-	expectedMode: MarketDataMode;
-	eligibleAt: Date;
-	delayMilliseconds: number;
-	maxSourceAgeMilliseconds?: number;
-	futureToleranceMilliseconds?: number;
-}): boolean {
-	if (input.trade.mode !== input.expectedMode || input.trade.receivedAt < input.eligibleAt) {
-		return false;
-	}
-	const logicalAt = logicalMarketTime(input.trade.receivedAt, input.delayMilliseconds);
-	const sourceAge = logicalAt.getTime() - input.trade.sourceTime.getTime();
-	return (
-		sourceAge <= (input.maxSourceAgeMilliseconds ?? MAX_QUOTE_AGE_MILLISECONDS) &&
-		sourceAge >= -(input.futureToleranceMilliseconds ?? 1_000)
-	);
 }
 
 export function hasAvailableCashForLiveFill(input: {
@@ -190,10 +223,6 @@ export function hasAvailableCashForLiveFill(input: {
 		.minus(input.reservedCash)
 		.plus(input.orderCashReservation);
 	return availableCash.greaterThanOrEqualTo(netCashDebit);
-}
-
-function quoteKey(mode: MarketDataMode, assetClass: AssetClass, symbol: string): string {
-	return `${mode}:${assetClass}:${symbol}`;
 }
 
 function eventKey(assetClass: AssetClass, symbol: string): string {
@@ -245,33 +274,9 @@ async function retrySerializable<T>(operation: () => Promise<T>): Promise<T> {
 	throw lastError;
 }
 
-function updateCachedQuote(cache: Map<string, NormalizedQuote>, quote: NormalizedQuote): void {
-	const key = quoteKey(quote.mode, quote.assetClass, quote.symbol);
-	const current = cache.get(key);
-	if (
-		!current ||
-		quote.sourceTime > current.sourceTime ||
-		(quote.sourceTime.getTime() === current.sourceTime.getTime() &&
-			quote.receivedAt > current.receivedAt)
-	) {
-		cache.set(key, quote);
-	}
-}
-
-function trailingStateChanged(
-	order: AcceptedOrder,
-	state: NonNullable<ReturnType<typeof evaluateStopTrigger>>
-): boolean {
-	return (
-		!order.trailingWatermark?.equals(state.watermark) ||
-		!order.trailingStopPrice?.equals(state.stopPrice)
-	);
-}
-
 export class LiveOrderExecutionCoordinator {
 	readonly #orders = new Map<string, TrackedOrder>();
 	readonly #orderIdsBySymbol = new Map<string, Set<string>>();
-	readonly #quotes = new Map<string, NormalizedQuote>();
 	readonly #unsubscribeByStream = new Map<string, () => void>();
 	readonly #topicSignatureByStream = new Map<string, string>();
 	readonly #lastReportedError = new Map<string, string>();
@@ -323,17 +328,23 @@ export class LiveOrderExecutionCoordinator {
 			this.#reportError('market calendar', error);
 			throw error;
 		}
+		const capabilities = getMarketEnvironment().capabilities;
 		const discovered = await this.#loadOpenOrders();
 		this.#lastReportedError.delete('refresh');
 		this.#orders.clear();
 		for (const order of discovered) this.#orders.set(order.orderId, order);
-		this.#rebuildSymbolIndex();
-
 		for (const order of [...this.#orders.values()].sort(compareTrackedOrders)) {
+			if (
+				order.executionModelVersion !== SIMULATION_EXECUTION_MODEL.version ||
+				!isLiveOrderCompatible(order, capabilities)
+			) {
+				await this.#cancelUnsupportedOrder(order, now);
+				continue;
+			}
 			if (order.timeInForce === 'day') await this.#expireOrder(order, now);
 		}
+		this.#rebuildSymbolIndex();
 		this.#syncSubscriptions();
-		this.#pruneQuoteCache();
 	}
 
 	async #loadOpenOrders(): Promise<TrackedOrder[]> {
@@ -346,9 +357,11 @@ export class LiveOrderExecutionCoordinator {
 					ownerUserId: tradingPortfolios.ownerUserId,
 					dataMode: tradingPortfolios.dataMode,
 					acceptedAt: tradingOrders.acceptedAt,
+					executionModelVersion: tradingOrders.executionModelVersion,
 					orderType: tradingOrders.orderType,
 					timeInForce: tradingOrders.timeInForce,
 					legNumber: tradingOrderLegs.legNumber,
+					ratioQuantity: tradingOrderLegs.ratioQuantity,
 					symbol: tradingInstruments.symbol,
 					assetClass: tradingInstruments.assetClass
 				})
@@ -359,7 +372,6 @@ export class LiveOrderExecutionCoordinator {
 				.where(
 					and(
 						inArray(tradingOrders.status, ACTIVE_ORDER_STATUSES),
-						ne(tradingOrders.timeInForce, 'ioc'),
 						eq(tradingPortfolios.status, 'active'),
 						isNotNull(tradingOrders.acceptedAt),
 						isNotNull(tradingOrders.eligibleAt)
@@ -376,7 +388,8 @@ export class LiveOrderExecutionCoordinator {
 				if (!row.acceptedAt) continue;
 				const leg = {
 					symbol: row.symbol,
-					assetClass: assetClassSchema.parse(row.assetClass)
+					assetClass: assetClassSchema.parse(row.assetClass),
+					ratioQuantity: new Decimal(row.ratioQuantity)
 				};
 				const existing = orders.get(row.orderId);
 				if (existing) {
@@ -389,6 +402,7 @@ export class LiveOrderExecutionCoordinator {
 					ownerUserId: row.ownerUserId,
 					dataMode: marketDataModeSchema.parse(row.dataMode),
 					acceptedAt: row.acceptedAt,
+					executionModelVersion: row.executionModelVersion,
 					orderType: orderTypeSchema.parse(row.orderType),
 					timeInForce: timeInForceSchema.parse(row.timeInForce),
 					legs: [leg]
@@ -403,7 +417,14 @@ export class LiveOrderExecutionCoordinator {
 
 	#rebuildSymbolIndex(): void {
 		this.#orderIdsBySymbol.clear();
+		const capabilities = getMarketEnvironment().capabilities;
 		for (const order of this.#orders.values()) {
+			if (
+				order.executionModelVersion !== SIMULATION_EXECUTION_MODEL.version ||
+				!isLiveOrderCompatible(order, capabilities)
+			) {
+				continue;
+			}
 			for (const leg of order.legs) {
 				const key = eventKey(leg.assetClass, leg.symbol);
 				const ids = this.#orderIdsBySymbol.get(key) ?? new Set<string>();
@@ -414,7 +435,14 @@ export class LiveOrderExecutionCoordinator {
 	}
 
 	#syncSubscriptions(): void {
-		const plan = planLiveOrderTopics([...this.#orders.values()]);
+		const capabilities = getMarketEnvironment().capabilities;
+		const plan = planLiveOrderTopics(
+			[...this.#orders.values()].filter(
+				(order) =>
+					order.executionModelVersion === SIMULATION_EXECUTION_MODEL.version &&
+					isLiveOrderCompatible(order, capabilities)
+			)
+		);
 		for (const mode of ['realtime', 'delayed'] as const) {
 			this.#syncAssetSubscription(mode, 'stocks', plan[mode].stocks);
 			this.#syncAssetSubscription(mode, 'options', plan[mode].options);
@@ -442,7 +470,6 @@ export class LiveOrderExecutionCoordinator {
 				assetClass,
 				topics,
 				(event) => {
-					if (event.kind === 'quote') updateCachedQuote(this.#quotes, event);
 					void this.#enqueue(() => this.#processEvent(event));
 				},
 				mode,
@@ -463,34 +490,21 @@ export class LiveOrderExecutionCoordinator {
 		}
 	}
 
-	#pruneQuoteCache(): void {
-		const expected = new Set(
-			[...this.#orders.values()].flatMap((order) =>
-				order.legs.map((leg) => quoteKey(order.dataMode, leg.assetClass, leg.symbol))
-			)
-		);
-		for (const key of this.#quotes.keys()) {
-			if (!expected.has(key)) this.#quotes.delete(key);
-		}
-	}
-
 	async #processEvent(event: NormalizedMarketEvent): Promise<void> {
-		if (event.kind !== 'quote' && event.kind !== 'trade' && event.kind !== 'bar') return;
-		if (event.kind === 'bar' && (event.assetClass !== 'stocks' || event.interval !== 'second')) {
-			return;
-		}
+		if (event.kind !== 'bar' || event.interval !== 'second') return;
 		const ids = this.#orderIdsBySymbol.get(eventKey(event.assetClass, event.symbol));
 		if (!ids) return;
 		const orders = [...ids]
 			.map((id) => this.#orders.get(id))
 			.filter((order): order is TrackedOrder => order !== undefined)
 			.sort(compareTrackedOrders);
+		const capabilities = getMarketEnvironment().capabilities;
 		for (const tracked of orders) {
-			if (event.kind === 'trade' && !STOP_ORDER_TYPES.has(tracked.orderType)) continue;
 			if (
-				event.kind === 'bar' &&
-				(tracked.legs.length !== 1 || tracked.legs[0]?.assetClass !== 'stocks')
+				tracked.executionModelVersion !== SIMULATION_EXECUTION_MODEL.version ||
+				!isLiveOrderCompatible(tracked, capabilities)
 			) {
+				await this.#cancelUnsupportedOrder(tracked, event.receivedAt);
 				continue;
 			}
 			try {
@@ -503,10 +517,7 @@ export class LiveOrderExecutionCoordinator {
 		}
 	}
 
-	async #processOrder(
-		tracked: TrackedOrder,
-		event: NormalizedQuote | NormalizedTrade | NormalizedBar
-	): Promise<OrderProcessingResult> {
+	async #processOrder(tracked: TrackedOrder, event: NormalizedBar): Promise<OrderProcessingResult> {
 		return drizzleTradingRepository.transaction(tracked.portfolioId, async (unitOfWork) => {
 			const holidays = this.#holidays;
 			if (!holidays) return { terminal: false };
@@ -522,9 +533,57 @@ export class LiveOrderExecutionCoordinator {
 			) {
 				return { terminal: true };
 			}
-			if (order.timeInForce === 'ioc') return { terminal: true };
+			const topicOrder: LiveOrderTopicInput = {
+				orderType: order.type,
+				timeInForce: order.timeInForce,
+				dataMode: portfolio.dataMode,
+				legs: order.legs.map((leg) => ({
+					symbol: leg.symbol,
+					assetClass: leg.instrument.assetClass,
+					ratioQuantity: leg.ratioQuantity
+				}))
+			};
+			const capabilities = getMarketEnvironment().capabilities;
+			const delayMilliseconds = liveOrderDelayMilliseconds(topicOrder, capabilities);
+			if (
+				order.executionModelVersion !== SIMULATION_EXECUTION_MODEL.version ||
+				!supportsLiveAggregateOrder(topicOrder) ||
+				delayMilliseconds === undefined
+			) {
+				const previousStatus = order.status;
+				const previousRevision = order.revision;
+				const canceled = transitionOrder(order, 'canceled', { at: event.receivedAt });
+				if (!(await unitOfWork.updateOrder(canceled, previousRevision))) {
+					throw new Error('Order changed during compatibility cancellation');
+				}
+				await unitOfWork.appendOrderEvent({
+					orderId: order.id,
+					fromStatus: previousStatus,
+					toStatus: 'canceled',
+					at: event.receivedAt,
+					reason: 'Canceled because current Massive access cannot safely execute the order'
+				});
+				await unitOfWork.releaseOrderReservations(order.id, event.receivedAt);
+				return { terminal: true };
+			}
 			if (portfolio.dataMode !== event.mode) return { terminal: false };
-			const delayMilliseconds = this.#delayMilliseconds(order.legs, portfolio.dataMode);
+			if (hasOptionLegAtOrPastExpiration(order.legs, event.startTime)) {
+				const previousStatus = order.status;
+				const previousRevision = order.revision;
+				const canceled = transitionOrder(order, 'canceled', { at: event.receivedAt });
+				if (!(await unitOfWork.updateOrder(canceled, previousRevision))) {
+					throw new Error('Order changed during option-expiration cancellation');
+				}
+				await unitOfWork.appendOrderEvent({
+					orderId: order.id,
+					fromStatus: previousStatus,
+					toStatus: 'canceled',
+					at: event.receivedAt,
+					reason: 'Canceled because option contracts cannot fill on or after expiration day'
+				});
+				await unitOfWork.releaseOrderReservations(order.id, event.receivedAt);
+				return { terminal: true };
+			}
 
 			if (
 				isDayOrderExpired({
@@ -538,129 +597,56 @@ export class LiveOrderExecutionCoordinator {
 				await this.#persistExpiry(unitOfWork, order, delayMilliseconds, holidays);
 				return { terminal: true };
 			}
-			if (!this.#orderAllowsEvent(order, event, delayMilliseconds, holidays)) {
+			if (!this.#orderAllowsEvent(order, event, holidays)) {
 				return { terminal: false };
 			}
 
-			if (event.kind === 'trade') {
-				if (!STOP_ORDER_TYPES.has(order.type) || order.triggeredAt) return { terminal: false };
-				if (
-					!isStopTradeEligible({
-						trade: event,
-						expectedMode: portfolio.dataMode,
-						eligibleAt: order.eligibleAt,
-						delayMilliseconds
-					})
-				) {
-					return { terminal: false };
-				}
-				const state = evaluateStopTrigger({
-					order,
-					trade: event,
-					state:
-						order.type === 'trailing_stop' && order.trailingWatermark && order.trailingStopPrice
-							? {
-									watermark: order.trailingWatermark,
-									stopPrice: order.trailingStopPrice,
-									triggered: false
-								}
-							: undefined
-				});
-				if (!state) return { terminal: false };
-				const newlyTriggered = state.triggered && !order.triggeredAt;
-				const persistTrailing =
-					order.type === 'trailing_stop' && trailingStateChanged(order, state);
-				if (newlyTriggered || persistTrailing) {
-					const previousRevision = order.revision;
-					order = {
-						...order,
-						triggeredAt: newlyTriggered ? event.sourceTime : order.triggeredAt,
-						trailingWatermark:
-							order.type === 'trailing_stop' ? state.watermark : order.trailingWatermark,
-						trailingStopPrice:
-							order.type === 'trailing_stop' ? state.stopPrice : order.trailingStopPrice,
-						revision: previousRevision + 1
-					};
-					if (!(await unitOfWork.updateOrder(order, previousRevision))) {
-						throw new Error('Order changed while its stop state was being updated');
-					}
-					if (newlyTriggered) {
-						await unitOfWork.appendOrderEvent({
-							orderId: order.id,
-							fromStatus: order.status,
-							toStatus: order.status,
-							at: event.sourceTime,
-							reason: 'Triggered by a matching live trade'
-						});
-					}
-				}
-				return { terminal: false };
-			}
-
-			let fill: StrategyFill | undefined;
-			if (event.kind === 'bar') {
-				if (order.lastEvaluatedBarEndAt && event.endTime <= order.lastEvaluatedBarEndAt) {
-					return { terminal: false };
-				}
-				const barContext = {
-					attemptAt: new Date(),
-					expectedMode: portfolio.dataMode,
-					expectedDelayMilliseconds: delayMilliseconds,
-					maxTransportAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
-					maxSourceAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
-					futureToleranceMilliseconds: 1_000
-				};
-				if (!validateExecutableBar(event, barContext, order.eligibleAt).executable) {
-					return { terminal: false };
-				}
-				const evaluation = calculateBarFill({
-					order,
+			const barContext = {
+				attemptAt: event.receivedAt,
+				expectedMode: portfolio.dataMode,
+				expectedDelayMilliseconds: delayMilliseconds,
+				maxTransportAgeMilliseconds: MAX_BAR_AGE_MILLISECONDS,
+				maxSourceAgeMilliseconds: MAX_BAR_AGE_MILLISECONDS,
+				futureToleranceMilliseconds: 0
+			};
+			if (
+				!shouldEvaluateAggregateBar({
 					bar: event,
-					executionModel: SIMULATION_EXECUTION_MODEL,
 					barContext,
-					feeModel: SIMULATION_FEE_MODEL
-				});
-				const newlyTriggered = evaluation.triggered && !order.triggeredAt;
-				const previousRevision = order.revision;
-				order = {
-					...order,
-					triggeredAt: newlyTriggered ? event.sourceTime : order.triggeredAt,
-					lastEvaluatedBarEndAt: event.endTime,
-					revision: previousRevision + 1
-				};
-				if (!(await unitOfWork.updateOrder(order, previousRevision))) {
-					throw new Error('Order changed while its aggregate cursor was being updated');
-				}
-				if (newlyTriggered) {
-					await unitOfWork.appendOrderEvent({
-						orderId: order.id,
-						fromStatus: order.status,
-						toStatus: order.status,
-						at: event.sourceTime,
-						reason: 'Triggered by a matching first-seen aggregate bar'
-					});
-				}
-				fill = evaluation.fill;
-			} else {
-				const quotes = this.#eligibleQuotes(order, portfolio.dataMode, event.sourceTime);
-				if (!quotes) return { terminal: false };
-				fill = calculateQuoteFill({
-					order,
-					quotes,
-					executionModel: SIMULATION_EXECUTION_MODEL,
-					quoteContext: {
-						attemptAt: event.receivedAt,
-						expectedMode: portfolio.dataMode,
-						expectedDelayMilliseconds: delayMilliseconds,
-						maxTransportAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
-						maxSourceAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
-						futureToleranceMilliseconds: 1_000,
-						maxSourceSkewMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
-						maxReceiptSkewMilliseconds: MAX_QUOTE_AGE_MILLISECONDS
-					},
-					feeModel: SIMULATION_FEE_MODEL
+					eligibleAt: order.eligibleAt,
+					lastEvaluatedBarEndAt: order.lastEvaluatedBarEndAt
+				})
+			) {
+				return { terminal: false };
+			}
+			const evaluation = calculateBarFill({
+				order,
+				bar: event,
+				executionModel: SIMULATION_EXECUTION_MODEL,
+				barContext,
+				feeModel: SIMULATION_FEE_MODEL
+			});
+			const newlyTriggered = evaluation.triggered && !order.triggeredAt;
+			const cursorRevision = order.revision;
+			order = {
+				...order,
+				triggeredAt: newlyTriggered ? event.sourceTime : order.triggeredAt,
+				lastEvaluatedBarEndAt: event.endTime,
+				revision: cursorRevision + 1
+			};
+			if (!(await unitOfWork.updateOrder(order, cursorRevision))) {
+				throw new Error('Order changed while its aggregate cursor was being updated');
+			}
+			if (newlyTriggered) {
+				await unitOfWork.appendOrderEvent({
+					orderId: order.id,
+					fromStatus: order.status,
+					toStatus: order.status,
+					at: event.sourceTime,
+					reason: 'Triggered by a matching first-seen aggregate bar'
 				});
 			}
+			const fill: StrategyFill | undefined = evaluation.fill;
 			if (!fill) return { terminal: false };
 			const netCashChange = fill.legs.reduce((change, leg) => {
 				const grossAmount = fillGrossAmount(leg);
@@ -679,26 +665,23 @@ export class LiveOrderExecutionCoordinator {
 					netCashChange
 				})
 			) {
-				if (event.kind === 'bar') {
-					const previousRevision = order.revision;
-					const canceled = transitionOrder(order, 'canceled', {
-						at: event.receivedAt,
-						reason: 'Aggregate execution exceeded available cash'
-					});
-					if (!(await unitOfWork.updateOrder(canceled, previousRevision))) {
-						throw new Error('Order changed during aggregate funding cancellation');
-					}
-					await unitOfWork.appendOrderEvent({
-						orderId: order.id,
-						fromStatus: order.status,
-						toStatus: 'canceled',
-						at: event.receivedAt,
-						reason: 'Canceled because the aggregate fill exceeded available cash'
-					});
-					await unitOfWork.releaseOrderReservations(order.id, event.receivedAt);
-					return { terminal: true };
+				const previousRevision = order.revision;
+				const canceled = transitionOrder(order, 'canceled', {
+					at: event.receivedAt,
+					reason: 'Aggregate execution exceeded available cash'
+				});
+				if (!(await unitOfWork.updateOrder(canceled, previousRevision))) {
+					throw new Error('Order changed during aggregate funding cancellation');
 				}
-				return { terminal: false };
+				await unitOfWork.appendOrderEvent({
+					orderId: order.id,
+					fromStatus: order.status,
+					toStatus: 'canceled',
+					at: event.receivedAt,
+					reason: 'Canceled because the aggregate fill exceeded available cash'
+				});
+				await unitOfWork.releaseOrderReservations(order.id, event.receivedAt);
+				return { terminal: true };
 			}
 
 			const positions = await unitOfWork.getPositionsForUpdate(
@@ -731,10 +714,7 @@ export class LiveOrderExecutionCoordinator {
 				fromStatus: previousStatus,
 				toStatus: order.status,
 				at: fill.receivedAt,
-				reason:
-					event.kind === 'bar'
-						? 'Filled by the first-seen aggregate execution model'
-						: 'Filled by the live quote execution model'
+				reason: 'Filled by the first-seen aggregate execution model'
 			});
 			await unitOfWork.consumeOrderReservations({
 				orderId: order.id,
@@ -746,70 +726,37 @@ export class LiveOrderExecutionCoordinator {
 		});
 	}
 
-	#eligibleQuotes(
-		order: AcceptedOrder,
-		mode: MarketDataMode,
-		eventSourceTime: Date
-	): Map<string, NormalizedQuote> | undefined {
-		const quotes = new Map<string, NormalizedQuote>();
-		for (const leg of order.legs) {
-			const quote = this.#quotes.get(quoteKey(mode, leg.instrument.assetClass, leg.symbol));
-			if (
-				!quote ||
-				!isQuoteEligibleForEvent({
-					quote,
-					expectedMode: mode,
-					eventSourceTime,
-					triggeredAt: order.triggeredAt
-				})
-			) {
-				return undefined;
-			}
-			quotes.set(leg.symbol, quote);
-		}
-		return quotes;
-	}
-
 	#delayMilliseconds(
 		legs: readonly (LiveOrderTopicLeg | AcceptedOrder['legs'][number])[],
 		dataMode: MarketDataMode
 	): number {
 		const capabilities = getMarketEnvironment().capabilities;
-		const delays = new Set(
-			legs.map((leg) => {
-				const assetClass = 'instrument' in leg ? leg.instrument.assetClass : leg.assetClass;
-				const capability = capabilities[assetClass];
-				if (capability.executionMode !== dataMode) {
-					throw new Error(
-						`${assetClass} ${dataMode} data does not match the configured Massive plan`
-					);
-				}
-				if (capability.delayMinutes === null) {
-					throw new Error(`${assetClass} has no executable market-data delay`);
-				}
-				return capability.delayMinutes * 60 * 1_000;
-			})
+		const delay = liveOrderDelayMilliseconds(
+			{
+				dataMode,
+				legs: legs.map((leg) => ({
+					symbol: leg.symbol,
+					assetClass: 'instrument' in leg ? leg.instrument.assetClass : leg.assetClass,
+					ratioQuantity: leg.ratioQuantity
+				}))
+			},
+			capabilities
 		);
-		if (delays.size !== 1) throw new Error('Order legs do not share one logical market clock');
-		const [delay] = delays;
-		if (delay === undefined) throw new Error('Order has no executable market-data legs');
+		if (delay === undefined) {
+			throw new Error('Order market-data access is incompatible with the configured Massive plan');
+		}
 		return delay;
 	}
 
 	#arrivalGraceMilliseconds(
 		legs: readonly (LiveOrderTopicLeg | AcceptedOrder['legs'][number])[]
 	): number {
-		return legs.every(
-			(leg) => ('instrument' in leg ? leg.instrument.assetClass : leg.assetClass) === 'stocks'
-		)
-			? BAR_ARRIVAL_GRACE_MILLISECONDS
-			: 0;
+		return legs.length === 1 ? BAR_ARRIVAL_GRACE_MILLISECONDS : 0;
 	}
 
 	#orderAllowsEvent(
 		order: AcceptedOrder,
-		event: NormalizedQuote | NormalizedTrade | NormalizedBar,
-		delayMilliseconds: number,
+		event: NormalizedBar,
 		holidays: readonly MassiveMarketHoliday[]
 	): boolean {
 		const allStockLegs = order.legs.every((leg) => leg.instrument.assetClass === 'stocks');
@@ -820,10 +767,47 @@ export class LiveOrderExecutionCoordinator {
 				orderType: order.type,
 				allStockLegs
 			});
-		if (event.kind === 'bar') return allowed(event.startTime);
-		return (
-			allowed(event.sourceTime) && allowed(logicalMarketTime(event.receivedAt, delayMilliseconds))
-		);
+		return allowed(event.startTime);
+	}
+
+	async #cancelUnsupportedOrder(tracked: TrackedOrder, at: Date): Promise<void> {
+		try {
+			const terminal = await retrySerializable(() =>
+				drizzleTradingRepository.transaction(tracked.portfolioId, async (unitOfWork) => {
+					const portfolio = await unitOfWork.getPortfolioForUpdate(
+						tracked.portfolioId,
+						tracked.ownerUserId
+					);
+					if (!portfolio || portfolio.status !== 'active') return true;
+					const order = await unitOfWork.getOrderForUpdate(tracked.orderId);
+					if (
+						!order ||
+						!ACTIVE_ORDER_STATUSES.includes(order.status as (typeof ACTIVE_ORDER_STATUSES)[number])
+					) {
+						return true;
+					}
+					const previousStatus = order.status;
+					const previousRevision = order.revision;
+					const canceled = transitionOrder(order, 'canceled', { at });
+					if (!(await unitOfWork.updateOrder(canceled, previousRevision))) {
+						throw new Error('Order changed during aggregate compatibility cancellation');
+					}
+					await unitOfWork.appendOrderEvent({
+						orderId: order.id,
+						fromStatus: previousStatus,
+						toStatus: 'canceled',
+						at,
+						reason:
+							'Canceled because current Massive access or the aggregate execution model is incompatible with the order'
+					});
+					await unitOfWork.releaseOrderReservations(order.id, at);
+					return true;
+				})
+			);
+			if (terminal) this.#removeTrackedOrder(tracked.orderId);
+		} catch (error) {
+			this.#reportError(`cancel unsupported order ${tracked.orderId}`, error);
+		}
 	}
 
 	async #expireOrder(tracked: TrackedOrder, at: Date): Promise<void> {
@@ -898,7 +882,6 @@ export class LiveOrderExecutionCoordinator {
 		if (!this.#orders.delete(orderId)) return;
 		this.#rebuildSymbolIndex();
 		this.#syncSubscriptions();
-		this.#pruneQuoteCache();
 	}
 
 	#reportError(context: string, error: unknown): void {

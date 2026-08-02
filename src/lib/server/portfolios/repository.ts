@@ -97,8 +97,6 @@ export async function createOwnedPortfolio(
 			accountType: input.accountType,
 			allowShortEquity: input.allowShortEquity,
 			allowLongOptions: input.allowLongOptions,
-			allowCoveredOptions: input.allowCoveredOptions,
-			allowDefinedRiskSpreads: input.allowDefinedRiskSpreads,
 			allowExtendedHours: input.allowExtendedHours,
 			requireTradePlan: input.requireTradePlan,
 			maxOrderNotional: optionalNumeric(input.maxOrderNotional),

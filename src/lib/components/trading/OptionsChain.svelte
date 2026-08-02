@@ -14,6 +14,10 @@
 		expirationLabel: string;
 		daysToExpiration?: number;
 		quoteAsOf?: string;
+		priceRecencyLabel?: string;
+		greeksRecencyLabel?: string;
+		openInterestRecencyLabel?: string;
+		showBidAsk?: boolean;
 		currency?: string;
 		locale?: string;
 		loading?: boolean;
@@ -29,6 +33,10 @@
 		expirationLabel,
 		daysToExpiration,
 		quoteAsOf,
+		priceRecencyLabel,
+		greeksRecencyLabel,
+		openInterestRecencyLabel,
+		showBidAsk = true,
 		currency = 'USD',
 		locale = 'en-US',
 		loading = false,
@@ -46,7 +54,7 @@
 		'option-loading-3',
 		'option-loading-4'
 	];
-	const desktopColumns = [
+	const allDesktopColumns = [
 		'call-action',
 		'call-oi',
 		'call-vol',
@@ -65,6 +73,15 @@
 		'put-oi',
 		'put-action'
 	];
+	let selectable = $derived(Boolean(onSelect));
+	let desktopColumns = $derived(
+		allDesktopColumns.filter(
+			(column) =>
+				(showBidAsk || (!column.endsWith('-bid') && !column.endsWith('-ask'))) &&
+				(selectable || !column.endsWith('-action'))
+		)
+	);
+	let desktopColspan = $derived(5 + (showBidAsk ? 2 : 0) + (selectable ? 1 : 0));
 	let money = $derived(
 		new Intl.NumberFormat(locale, {
 			style: 'currency',
@@ -109,16 +126,20 @@
 
 {#snippet contractAction(contract: OptionContractQuote | undefined)}
 	{#if contract && onSelect}
-		<Button
-			variant={isSelected(contract) ? 'default' : 'outline'}
-			size="sm"
-			class="rounded-none shadow-none transition-none"
-			onclick={() => onSelect?.(contract)}
-			aria-pressed={isSelected(contract)}
-			aria-label={`${isSelected(contract) ? 'Remove' : 'Add'} ${contract.symbol} ${contract.type} contract`}
-		>
-			{isSelected(contract) ? 'Added' : 'Add'}
-		</Button>
+		{#if contract.standardDeliverable}
+			<Button
+				variant={isSelected(contract) ? 'default' : 'outline'}
+				size="sm"
+				class="rounded-none shadow-none transition-none"
+				onclick={() => onSelect?.(contract)}
+				aria-pressed={isSelected(contract)}
+				aria-label={`${isSelected(contract) ? 'Selected' : 'Select'} ${contract.symbol} ${contract.type} contract`}
+			>
+				{isSelected(contract) ? 'Selected' : 'Select'}
+			</Button>
+		{:else}
+			<span class="text-xs text-muted-foreground" title="Adjusted deliverable">Adjusted</span>
+		{/if}
 	{:else}
 		<span aria-hidden="true">—</span><span class="sr-only">Unavailable</span>
 	{/if}
@@ -133,6 +154,13 @@
 					· {daysToExpiration} DTE{/if}{#if quoteAsOf}
 					· As of {quoteAsOf}{/if}
 			</p>
+			{#if priceRecencyLabel || greeksRecencyLabel || openInterestRecencyLabel}
+				<ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+					{#if priceRecencyLabel}<li>{priceRecencyLabel}</li>{/if}
+					{#if greeksRecencyLabel}<li>{greeksRecencyLabel}</li>{/if}
+					{#if openInterestRecencyLabel}<li>{openInterestRecencyLabel}</li>{/if}
+				</ul>
+			{/if}
 		</div>
 		<div class="flex md:hidden" role="group" aria-label="Option type">
 			<Button
@@ -178,41 +206,59 @@
 		</div>
 	{:else}
 		<div class="hidden md:block">
-			<Table.Root class="min-w-[92rem]">
-				<Table.Caption class="sr-only"
-					>Options expiring {expirationLabel}. Select a contract to add it to the order ticket.</Table.Caption
-				>
+			<Table.Root
+				class={showBidAsk
+					? selectable
+						? 'min-w-[92rem]'
+						: 'min-w-[84rem]'
+					: selectable
+						? 'min-w-[68rem]'
+						: 'min-w-[60rem]'}
+			>
+				<Table.Caption class="sr-only">
+					Options expiring {expirationLabel}.{selectable
+						? ' Select one standard contract for the order ticket.'
+						: ' Research-only option chain.'}
+				</Table.Caption>
 				<Table.Header>
 					<Table.Row class="border-b-0 hover:bg-transparent">
-						<Table.Head colspan={8} scope="colgroup" class="border-r border-border px-3 text-center"
-							>Calls</Table.Head
+						<Table.Head
+							colspan={desktopColspan}
+							scope="colgroup"
+							class="border-r border-border px-3 text-center">Calls</Table.Head
 						>
 						<Table.Head
 							rowspan={2}
 							scope="col"
 							class="border-r border-l border-border px-3 text-center">Strike</Table.Head
 						>
-						<Table.Head colspan={8} scope="colgroup" class="border-l border-border px-3 text-center"
-							>Puts</Table.Head
+						<Table.Head
+							colspan={desktopColspan}
+							scope="colgroup"
+							class="border-l border-border px-3 text-center">Puts</Table.Head
 						>
 					</Table.Row>
 					<Table.Row class="hover:bg-transparent">
-						<Table.Head scope="col" class="px-3">Add</Table.Head>
+						{#if selectable}<Table.Head scope="col" class="px-3">Select</Table.Head>{/if}
 						<Table.Head scope="col" class="px-3 text-right">OI</Table.Head>
 						<Table.Head scope="col" class="px-3 text-right">Vol</Table.Head>
 						<Table.Head scope="col" class="px-3 text-right">IV</Table.Head>
 						<Table.Head scope="col" class="px-3 text-right">Delta</Table.Head>
-						<Table.Head scope="col" class="px-3 text-right">Last</Table.Head>
-						<Table.Head scope="col" class="px-3 text-right">Bid</Table.Head>
-						<Table.Head scope="col" class="border-r border-border px-3 text-right">Ask</Table.Head>
-						<Table.Head scope="col" class="border-l border-border px-3 text-right">Bid</Table.Head>
-						<Table.Head scope="col" class="px-3 text-right">Ask</Table.Head>
-						<Table.Head scope="col" class="px-3 text-right">Last</Table.Head>
+						<Table.Head scope="col" class="px-3 text-right">Session close</Table.Head>
+						{#if showBidAsk}
+							<Table.Head scope="col" class="px-3 text-right">Bid</Table.Head>
+							<Table.Head scope="col" class="border-r border-border px-3 text-right">Ask</Table.Head
+							>
+							<Table.Head scope="col" class="border-l border-border px-3 text-right">Bid</Table.Head
+							>
+							<Table.Head scope="col" class="px-3 text-right">Ask</Table.Head>
+						{/if}
+						<Table.Head scope="col" class="px-3 text-right">Session close</Table.Head>
 						<Table.Head scope="col" class="px-3 text-right">Delta</Table.Head>
 						<Table.Head scope="col" class="px-3 text-right">IV</Table.Head>
 						<Table.Head scope="col" class="px-3 text-right">Vol</Table.Head>
 						<Table.Head scope="col" class="px-3 text-right">OI</Table.Head>
-						<Table.Head scope="col" class="px-3 text-right">Add</Table.Head>
+						{#if selectable}<Table.Head scope="col" class="px-3 text-right">Select</Table.Head>{/if}
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
@@ -229,7 +275,9 @@
 					{:else}
 						{#each rows as row (row.id)}
 							<Table.Row class={row.isAtTheMoney ? 'bg-muted/50' : undefined}>
-								<Table.Cell class="px-3 py-2">{@render contractAction(row.call)}</Table.Cell>
+								{#if selectable}<Table.Cell class="px-3 py-2"
+										>{@render contractAction(row.call)}</Table.Cell
+									>{/if}
 								<Table.Cell class="px-3 py-2 text-right tabular-nums"
 									>{formatInteger(row.call?.openInterest)}</Table.Cell
 								>
@@ -243,14 +291,16 @@
 									>{formatDecimal(row.call?.delta)}</Table.Cell
 								>
 								<Table.Cell class="px-3 py-2 text-right tabular-nums"
-									>{formatPrice(row.call?.last)}</Table.Cell
+									>{formatPrice(row.call?.sessionClose)}</Table.Cell
 								>
-								<Table.Cell class="px-3 py-2 text-right tabular-nums"
-									>{formatPrice(row.call?.bid)}</Table.Cell
-								>
-								<Table.Cell class="border-r border-border px-3 py-2 text-right tabular-nums"
-									>{formatPrice(row.call?.ask)}</Table.Cell
-								>
+								{#if showBidAsk}
+									<Table.Cell class="px-3 py-2 text-right tabular-nums"
+										>{formatPrice(row.call?.bid)}</Table.Cell
+									>
+									<Table.Cell class="border-r border-border px-3 py-2 text-right tabular-nums"
+										>{formatPrice(row.call?.ask)}</Table.Cell
+									>
+								{/if}
 								<Table.Cell
 									class="border-r border-l border-border bg-muted/30 px-3 py-2 text-center font-semibold tabular-nums"
 								>
@@ -260,14 +310,16 @@
 											>ATM</span
 										>{/if}
 								</Table.Cell>
-								<Table.Cell class="border-l border-border px-3 py-2 text-right tabular-nums"
-									>{formatPrice(row.put?.bid)}</Table.Cell
-								>
+								{#if showBidAsk}
+									<Table.Cell class="border-l border-border px-3 py-2 text-right tabular-nums"
+										>{formatPrice(row.put?.bid)}</Table.Cell
+									>
+									<Table.Cell class="px-3 py-2 text-right tabular-nums"
+										>{formatPrice(row.put?.ask)}</Table.Cell
+									>
+								{/if}
 								<Table.Cell class="px-3 py-2 text-right tabular-nums"
-									>{formatPrice(row.put?.ask)}</Table.Cell
-								>
-								<Table.Cell class="px-3 py-2 text-right tabular-nums"
-									>{formatPrice(row.put?.last)}</Table.Cell
+									>{formatPrice(row.put?.sessionClose)}</Table.Cell
 								>
 								<Table.Cell class="px-3 py-2 text-right tabular-nums"
 									>{formatDecimal(row.put?.delta)}</Table.Cell
@@ -281,9 +333,9 @@
 								<Table.Cell class="px-3 py-2 text-right tabular-nums"
 									>{formatInteger(row.put?.openInterest)}</Table.Cell
 								>
-								<Table.Cell class="px-3 py-2 text-right"
-									>{@render contractAction(row.put)}</Table.Cell
-								>
+								{#if selectable}<Table.Cell class="px-3 py-2 text-right"
+										>{@render contractAction(row.put)}</Table.Cell
+									>{/if}
 							</Table.Row>
 						{/each}
 					{/if}
@@ -331,13 +383,21 @@
 										>{/if}
 								</header>
 								<dl class="mt-4 grid grid-cols-3 gap-x-4 gap-y-3 text-sm">
+									{#if showBidAsk}
+										<div>
+											<dt class="text-xs text-muted-foreground">Bid</dt>
+											<dd class="mt-0.5 tabular-nums">{formatPrice(item.contract.bid)}</dd>
+										</div>
+										<div>
+											<dt class="text-xs text-muted-foreground">Ask</dt>
+											<dd class="mt-0.5 tabular-nums">{formatPrice(item.contract.ask)}</dd>
+										</div>
+									{/if}
 									<div>
-										<dt class="text-xs text-muted-foreground">Bid</dt>
-										<dd class="mt-0.5 tabular-nums">{formatPrice(item.contract.bid)}</dd>
-									</div>
-									<div>
-										<dt class="text-xs text-muted-foreground">Ask</dt>
-										<dd class="mt-0.5 tabular-nums">{formatPrice(item.contract.ask)}</dd>
+										<dt class="text-xs text-muted-foreground">Session close</dt>
+										<dd class="mt-0.5 tabular-nums">
+											{formatPrice(item.contract.sessionClose)}
+										</dd>
 									</div>
 									<div>
 										<dt class="text-xs text-muted-foreground">Delta</dt>

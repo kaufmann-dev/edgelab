@@ -15,6 +15,27 @@
       "when": 1785631775195,
       "tag": "0001_natural_greymalkin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785636632739,
+      "tag": "0002_careful_tusk",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785641062094,
+      "tag": "0003_green_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785643484036,
+      "tag": "0004_smooth_roxanne_simpson",
+      "breakpoints": true
     }
   ]
 }

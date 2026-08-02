@@ -2,7 +2,6 @@
 	import Decimal from 'decimal.js';
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-	import LayersIcon from '@lucide/svelte/icons/layers';
 	import ReceiptTextIcon from '@lucide/svelte/icons/receipt-text';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import type { Pathname } from '$app/types';
@@ -52,9 +51,7 @@
 
 	interface OptionLegSelection {
 		contract: OptionContractQuote;
-		side: 'buy' | 'sell';
-		positionEffect: 'open' | 'close';
-		ratioQuantity: number;
+		action: 'buy_to_open' | 'sell_to_close';
 	}
 
 	const EMPTY_DRAFT: StockOrderDraft = {
@@ -74,28 +71,83 @@
 	};
 
 	let { data }: PageProps = $props();
-	let stockDraft = $state<StockOrderDraft>({ ...EMPTY_DRAFT });
-	let optionLegs = $state<OptionLegSelection[]>([]);
-	let optionQuantity = $state('1');
-	let optionOrderType = $state<'market' | 'limit'>('limit');
-	let optionLimitPrice = $state('');
-	let optionNetEffect = $state<'debit' | 'credit'>('debit');
-	let optionTimeInForce = $state<'day' | 'gtc' | 'ioc'>('day');
-	let selectedTradePlanId = $state('');
-	let preview = $state<SerializedPreview | null>(null);
-	let ticketError = $state<string | null>(null);
-	let reviewing = $state(false);
-	let placing = $state(false);
-	let reviewedPayload = $state<string | null>(null);
-	let receipt = $state<{
+	let optionContractIds = $derived(
+		data.options.rows
+			.flatMap((row) => [row.call?.id, row.put?.id])
+			.filter((id): id is string => id !== undefined)
+			.toSorted()
+	);
+	let availableOptionContractIds = $derived(new Set(optionContractIds));
+	let loadedTicketContext = $derived(
+		[
+			data.portfolio.id,
+			data.requestedSymbol,
+			data.assetView,
+			data.options.expiration ?? '',
+			optionContractIds.join(',')
+		].join(':')
+	);
+	let stockDraft = $derived.by<StockOrderDraft>(() => {
+		void loadedTicketContext;
+		return { ...EMPTY_DRAFT };
+	});
+	let optionLeg = $derived.by<OptionLegSelection | null>(() => {
+		void loadedTicketContext;
+		return null;
+	});
+	let optionQuantity = $derived.by(() => {
+		void loadedTicketContext;
+		return '1';
+	});
+	let optionLimitPrice = $derived.by(() => {
+		void loadedTicketContext;
+		return '';
+	});
+	let selectedTradePlanId = $derived.by(() => {
+		void loadedTicketContext;
+		return '';
+	});
+	let preview = $derived.by<SerializedPreview | null>(() => {
+		void loadedTicketContext;
+		return null;
+	});
+	let ticketError = $derived.by<string | null>(() => {
+		void loadedTicketContext;
+		return null;
+	});
+	let reviewing = $derived.by(() => {
+		void loadedTicketContext;
+		return false;
+	});
+	let placing = $derived.by(() => {
+		void loadedTicketContext;
+		return false;
+	});
+	let reviewedPayload = $derived.by<string | null>(() => {
+		void loadedTicketContext;
+		return null;
+	});
+	let receipt = $derived.by<{
 		id: string;
 		status: string;
 		filledQuantity: string;
 		quantity: string;
-	} | null>(null);
-	let clientOrderId = $state(crypto.randomUUID());
-	let streamedQuote = $state<StockQuote | null>(null);
-	let streamedFeed = $state<{ symbol: string; state: MarketFeedState } | null>(null);
+	} | null>(() => {
+		void loadedTicketContext;
+		return null;
+	});
+	let clientOrderId = $derived.by(() => {
+		void loadedTicketContext;
+		return crypto.randomUUID();
+	});
+	let streamedQuote = $derived.by<StockQuote | null>(() => {
+		void loadedTicketContext;
+		return null;
+	});
+	let streamedFeed = $derived.by<{ symbol: string; state: MarketFeedState } | null>(() => {
+		void loadedTicketContext;
+		return null;
+	});
 
 	const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 	let marketsRoute = $derived(
@@ -124,6 +176,14 @@
 	);
 	let optionsTabPath = $derived(
 		`${tradeRoute}?symbol=${encodeURIComponent(data.requestedSymbol)}&asset=options` as Pathname
+	);
+	let selectedOptionContractIds = $derived(
+		optionLeg && availableOptionContractIds.has(optionLeg.contract.id)
+			? [optionLeg.contract.id]
+			: []
+	);
+	let optionPriceEffect = $derived<'debit' | 'credit'>(
+		optionLeg?.action === 'sell_to_close' ? 'credit' : 'debit'
 	);
 	let previewItems = $derived.by<OrderPreviewItem[]>(() =>
 		preview
@@ -236,35 +296,48 @@
 	}
 
 	function optionPayload() {
-		if (optionLegs.length === 0) throw new Error('Add at least one option contract.');
+		if (!optionLeg || !availableOptionContractIds.has(optionLeg.contract.id)) {
+			throw new Error('Select one standard option contract.');
+		}
+		if (!optionLeg.contract.standardDeliverable) {
+			throw new Error('Adjusted option contracts are not supported.');
+		}
 		let quantity: Decimal;
 		try {
 			quantity = new Decimal(optionQuantity);
 		} catch {
-			throw new Error('Strategy quantity must be a positive whole number.');
+			throw new Error('Contract quantity must be a positive whole number.');
 		}
 		if (!quantity.isInteger() || !quantity.greaterThan(0)) {
-			throw new Error('Strategy quantity must be a positive whole number.');
+			throw new Error('Contract quantity must be a positive whole number.');
 		}
-		if (optionOrderType === 'limit' && !(Number(optionLimitPrice) > 0)) {
-			throw new Error('Enter a positive net limit price.');
+		let limitPrice: Decimal;
+		try {
+			limitPrice = new Decimal(optionLimitPrice);
+		} catch {
+			throw new Error('Enter a positive limit price.');
+		}
+		if (!limitPrice.isFinite() || !limitPrice.greaterThan(0)) {
+			throw new Error('Enter a positive limit price.');
 		}
 		return {
 			portfolioId: data.portfolio.id,
 			tradePlanId: selectedTradePlanId || undefined,
 			clientOrderId,
-			type: optionOrderType,
-			timeInForce: optionTimeInForce,
+			type: 'limit',
+			timeInForce: 'day',
 			quantity: quantity.toString(),
-			limitPrice: optionOrderType === 'limit' ? optionLimitPrice : undefined,
-			netPriceEffect: optionNetEffect,
+			limitPrice: limitPrice.toString(),
+			netPriceEffect: optionPriceEffect,
 			extendedHours: false,
-			legs: optionLegs.map((leg) => ({
-				symbol: leg.contract.symbol,
-				side: leg.side,
-				positionEffect: leg.positionEffect,
-				ratioQuantity: String(leg.ratioQuantity)
-			}))
+			legs: [
+				{
+					symbol: optionLeg.contract.symbol,
+					side: optionLeg.action === 'sell_to_close' ? 'sell' : 'buy',
+					positionEffect: optionLeg.action === 'sell_to_close' ? 'close' : 'open',
+					ratioQuantity: '1'
+				}
+			]
 		};
 	}
 
@@ -278,6 +351,7 @@
 		reviewing = true;
 		ticketError = null;
 		let submittedPayload: string | null = null;
+		const submittedContext = loadedTicketContext;
 		try {
 			submittedPayload = JSON.stringify(currentPayload());
 			const response = await fetch(
@@ -290,15 +364,19 @@
 			);
 			const result = (await response.json()) as { error?: string; preview?: SerializedPreview };
 			if (!response.ok || !result.preview) throw new Error(result.error ?? 'Preview failed.');
-			if (currentPayloadKey !== submittedPayload) return;
+			if (loadedTicketContext !== submittedContext || currentPayloadKey !== submittedPayload)
+				return;
 			preview = result.preview;
 			reviewedPayload = submittedPayload;
 		} catch (cause) {
-			if (submittedPayload === null || currentPayloadKey === submittedPayload) {
+			if (
+				loadedTicketContext === submittedContext &&
+				(submittedPayload === null || currentPayloadKey === submittedPayload)
+			) {
 				ticketError = cause instanceof Error ? cause.message : 'Preview failed.';
 			}
 		} finally {
-			reviewing = false;
+			if (loadedTicketContext === submittedContext) reviewing = false;
 		}
 	}
 
@@ -306,6 +384,7 @@
 		if (!canPlace || currentPayloadKey === null) return;
 		const submittedPayload = JSON.stringify(currentPayload());
 		if (submittedPayload !== reviewedPayload) return;
+		const submittedContext = loadedTicketContext;
 		placing = true;
 		ticketError = null;
 		try {
@@ -323,33 +402,43 @@
 				order?: { id: string; status: string; filledQuantity: string; quantity: string };
 			};
 			if (!response.ok || !result.order) {
-				if (result.preview && currentPayloadKey === submittedPayload) {
+				if (
+					result.preview &&
+					loadedTicketContext === submittedContext &&
+					currentPayloadKey === submittedPayload
+				) {
 					preview = result.preview;
 					reviewedPayload = submittedPayload;
 				}
 				throw new Error(result.error ?? 'Order placement failed.');
 			}
-			receipt = result.order;
+			if (loadedTicketContext === submittedContext && currentPayloadKey === submittedPayload) {
+				receipt = result.order;
+			}
 		} catch (cause) {
-			if (currentPayloadKey === submittedPayload) {
+			if (loadedTicketContext === submittedContext && currentPayloadKey === submittedPayload) {
 				ticketError = cause instanceof Error ? cause.message : 'Order placement failed.';
 			}
 		} finally {
-			placing = false;
+			if (loadedTicketContext === submittedContext) placing = false;
 		}
 	}
 
-	function toggleContract(contract: OptionContractQuote) {
-		const existing = optionLegs.findIndex((leg) => leg.contract.id === contract.id);
-		if (existing >= 0) optionLegs.splice(existing, 1);
-		else if (optionLegs.length < 4) {
-			optionLegs.push({ contract, side: 'buy', positionEffect: 'open', ratioQuantity: 1 });
-		}
+	function selectContract(contract: OptionContractQuote) {
+		if (!contract.standardDeliverable) return;
+		if (optionLeg?.contract.id === contract.id) return;
+		optionLeg = { contract, action: 'buy_to_open' };
 		resetReview();
 	}
 
-	function updateOptionLeg(index: number, patch: Partial<Omit<OptionLegSelection, 'contract'>>) {
-		optionLegs[index] = { ...optionLegs[index], ...patch };
+	function updateOptionAction(action: OptionLegSelection['action']) {
+		if (!optionLeg) return;
+		optionLeg = { ...optionLeg, action };
+		resetReview();
+	}
+
+	function clearOptionLeg() {
+		optionLeg = null;
 		resetReview();
 	}
 </script>
@@ -405,7 +494,7 @@
 		</nav>
 	{/if}
 
-	{#if ticketError || data.marketError}
+	{#if ticketError || (data.assetView === 'stock' && data.marketError)}
 		<Alert variant="destructive" class="rounded-none shadow-none">
 			<CircleAlertIcon aria-hidden="true" />
 			<AlertTitle>Order ticket unavailable</AlertTitle>
@@ -555,11 +644,11 @@
 				</form>
 				<p class="max-w-xl text-xs text-muted-foreground">
 					{#if data.optionsTradingEnabled}
-						Up to four legs. Naked options are always blocked; portfolio permissions and collateral
-						are checked server-side.
+						Select one standard contract. A new selection replaces the current contract; portfolio
+						permissions and long-option ownership are checked server-side.
 					{:else}
-						Chain data is available for research, but this plan does not include the execution feeds
-						required by the current options simulator.
+						Chain data is available for research, but the configured plan clocks do not support
+						option simulation.
 					{/if}
 				</p>
 			</div>
@@ -569,6 +658,14 @@
 					<CircleAlertIcon aria-hidden="true" />
 					<AlertTitle>Options chain is view-only</AlertTitle>
 					<AlertDescription>{data.optionsTradingReason}</AlertDescription>
+				</Alert>
+			{/if}
+
+			{#if data.optionsTradingEnabled}
+				<Alert class="rounded-none shadow-none">
+					<CircleCheckIcon aria-hidden="true" />
+					<AlertTitle>Aggregate-based simulated fills</AlertTitle>
+					<AlertDescription>{data.optionsMarketData.executionDescription}</AlertDescription>
 				</Alert>
 			{/if}
 
@@ -583,97 +680,68 @@
 					<OptionsChain
 						rows={data.options.rows}
 						expirationLabel={data.options.expiration ?? 'No expiration'}
-						selectedContractIds={optionLegs.map((leg) => leg.contract.id)}
-						onSelect={data.optionsTradingEnabled ? toggleContract : undefined}
+						priceRecencyLabel={data.optionsMarketData.priceRecency}
+						greeksRecencyLabel={data.optionsMarketData.greeksRecency}
+						openInterestRecencyLabel={data.optionsMarketData.openInterestRecency}
+						showBidAsk={data.optionsMarketData.showBidAsk}
+						selectedContractIds={selectedOptionContractIds}
+						onSelect={data.optionsTradingEnabled ? selectContract : undefined}
 					/>
 				</div>
 			{/if}
 
 			{#if data.optionsTradingEnabled}
-				<section class="border border-border" aria-labelledby="strategy-ticket-heading">
+				<section class="border border-border" aria-labelledby="option-ticket-heading">
 					<header class="border-b border-border px-4 py-3">
 						<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-							Strategy
+							Options order
 						</p>
-						<h2 id="strategy-ticket-heading" class="mt-1 font-semibold">Selected option legs</h2>
+						<h2 id="option-ticket-heading" class="mt-1 font-semibold">
+							Single-contract limit ticket
+						</h2>
 					</header>
-					{#if optionLegs.length === 0}
+					{#if !optionLeg}
 						<div class="p-4">
 							<EmptyState
-								title="Add contracts from the chain"
-								description="Choose calls or puts, then set each leg’s side, position effect, and ratio."
-								icon={LayersIcon}
+								title="Select a standard contract"
+								description="Choose one call or put from the chain to prepare a limit order. Adjusted deliverables are view-only."
+								icon={ReceiptTextIcon}
 								compact
 							/>
 						</div>
 					{:else}
-						<div class="divide-y divide-border">
-							{#each optionLegs as leg, index (leg.contract.id)}
-								<div
-									class="grid gap-3 p-4 md:grid-cols-[minmax(14rem,1fr)_10rem_10rem_7rem_auto] md:items-end"
+						<div class="grid gap-3 p-4 md:grid-cols-[minmax(14rem,1fr)_12rem_auto] md:items-end">
+							<div class="min-w-0">
+								<p class="truncate font-medium">{optionLeg.contract.symbol}</p>
+								<p class="text-xs text-muted-foreground">
+									{optionLeg.contract.type} · {money.format(optionLeg.contract.strike)} strike · standard
+									100-share deliverable
+								</p>
+							</div>
+							<div>
+								<Label for="option-action">Action</Label>
+								<select
+									id="option-action"
+									value={optionLeg.action}
+									onchange={(event) =>
+										updateOptionAction(event.currentTarget.value as OptionLegSelection['action'])}
+									class="mt-2 h-10 w-full rounded-none border border-input bg-background px-2 text-sm"
 								>
-									<div class="min-w-0">
-										<p class="truncate font-medium">{leg.contract.symbol}</p>
-										<p class="text-xs text-muted-foreground">
-											{leg.contract.type} · {money.format(leg.contract.strike)} strike
-										</p>
-									</div>
-									<div>
-										<Label for={`option-side-${index}`}>Side</Label>
-										<select
-											id={`option-side-${index}`}
-											value={leg.side}
-											onchange={(event) =>
-												updateOptionLeg(index, {
-													side: event.currentTarget.value as 'buy' | 'sell'
-												})}
-											class="mt-2 h-10 w-full rounded-none border border-input bg-background px-2 text-sm"
-										>
-											<option value="buy">Buy</option><option value="sell">Sell</option>
-										</select>
-									</div>
-									<div>
-										<Label for={`option-effect-${index}`}>Effect</Label>
-										<select
-											id={`option-effect-${index}`}
-											value={leg.positionEffect}
-											onchange={(event) =>
-												updateOptionLeg(index, {
-													positionEffect: event.currentTarget.value as 'open' | 'close'
-												})}
-											class="mt-2 h-10 w-full rounded-none border border-input bg-background px-2 text-sm"
-										>
-											<option value="open">Open</option><option value="close">Close</option>
-										</select>
-									</div>
-									<div>
-										<Label for={`option-ratio-${index}`}>Ratio</Label>
-										<Input
-											id={`option-ratio-${index}`}
-											type="number"
-											min="1"
-											max="100"
-											value={leg.ratioQuantity}
-											oninput={(event) =>
-												updateOptionLeg(index, {
-													ratioQuantity: Number(event.currentTarget.value)
-												})}
-											class="mt-2 h-10 rounded-none shadow-none"
-										/>
-									</div>
-									<Button
-										type="button"
-										variant="ghost"
-										class="h-10 rounded-none text-destructive shadow-none"
-										onclick={() => toggleContract(leg.contract)}>Remove</Button
-									>
-								</div>
-							{/each}
+									<option value="buy_to_open">Buy to open</option>
+									<option value="sell_to_close">Sell to close</option>
+								</select>
+							</div>
+							<Button
+								type="button"
+								variant="ghost"
+								class="h-10 rounded-none text-destructive shadow-none"
+								onclick={clearOptionLeg}>Remove</Button
+							>
 						</div>
 
 						<div class="grid gap-4 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-5">
 							<div>
-								<Label for="option-quantity">Strategies</Label>
+								<Label for="option-quantity">Contracts</Label>
 								<Input
 									id="option-quantity"
 									type="number"
@@ -689,70 +757,47 @@
 								/>
 							</div>
 							<div>
-								<Label for="option-order-type">Order type</Label>
-								<select
-									id="option-order-type"
-									value={optionOrderType}
-									onchange={(event) => {
-										optionOrderType = event.currentTarget.value as 'market' | 'limit';
-										if (optionOrderType === 'market' && optionTimeInForce === 'gtc') {
-											optionTimeInForce = 'day';
-										}
+								<Label for="option-limit">Limit price per share</Label>
+								<Input
+									id="option-limit"
+									type="number"
+									min="0.01"
+									step="0.01"
+									inputmode="decimal"
+									value={optionLimitPrice}
+									oninput={(event) => {
+										optionLimitPrice = event.currentTarget.value;
 										resetReview();
 									}}
-									class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
-								>
-									<option value="limit">Net limit</option><option value="market">Market</option>
-								</select>
+									class="mt-2 h-11 rounded-none"
+								/>
 							</div>
-							{#if optionOrderType === 'limit'}
+							<dl class="contents">
 								<div>
-									<Label for="option-limit">Net price</Label>
-									<Input
-										id="option-limit"
-										type="number"
-										min="0.01"
-										step="0.01"
-										inputmode="decimal"
-										value={optionLimitPrice}
-										oninput={(event) => {
-											optionLimitPrice = event.currentTarget.value;
-											resetReview();
-										}}
-										class="mt-2 h-11 rounded-none"
-									/>
-								</div>
-								<div>
-									<Label for="option-effect">Net effect</Label>
-									<select
-										id="option-effect"
-										value={optionNetEffect}
-										onchange={(event) => {
-											optionNetEffect = event.currentTarget.value as 'debit' | 'credit';
-											resetReview();
-										}}
-										class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
+									<dt class="text-sm font-medium">Order type</dt>
+									<dd
+										class="mt-2 flex h-11 items-center border border-border bg-muted px-3 text-sm"
 									>
-										<option value="debit">Debit</option><option value="credit">Credit</option>
-									</select>
+										Limit
+									</dd>
 								</div>
-							{/if}
-							<div>
-								<Label for="option-tif">Time in force</Label>
-								<select
-									id="option-tif"
-									value={optionTimeInForce}
-									onchange={(event) => {
-										optionTimeInForce = event.currentTarget.value as 'day' | 'gtc' | 'ioc';
-										resetReview();
-									}}
-									class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
-								>
-									<option value="day">Day</option>
-									{#if optionOrderType === 'limit'}<option value="gtc">GTC</option>{/if}
-									<option value="ioc">IOC</option>
-								</select>
-							</div>
+								<div>
+									<dt class="text-sm font-medium">Time in force</dt>
+									<dd
+										class="mt-2 flex h-11 items-center border border-border bg-muted px-3 text-sm"
+									>
+										Day
+									</dd>
+								</div>
+								<div>
+									<dt class="text-sm font-medium">Price effect · Ratio</dt>
+									<dd
+										class="mt-2 flex h-11 items-center border border-border bg-muted px-3 text-sm capitalize"
+									>
+										{optionPriceEffect} · 1
+									</dd>
+								</div>
+							</dl>
 						</div>
 
 						<div class="grid gap-4 border-t border-border p-4 lg:grid-cols-[1fr_auto] lg:items-end">
@@ -773,7 +818,9 @@
 									{/each}
 								{:else}
 									<p class="text-sm text-muted-foreground">
-										Preview uses current leg quotes, collateral, buying power, and permissions.
+										Preview uses the submitted limit price, cash, buying power, long-position
+										ownership, and portfolio permissions. A fill still requires a future eligible
+										aggregate.
 									</p>
 								{/if}
 							</div>
@@ -783,7 +830,7 @@
 									variant="outline"
 									class="h-11 rounded-none shadow-none"
 									disabled={reviewing || Boolean(receipt)}
-									onclick={requestPreview}>{reviewing ? 'Reviewing…' : 'Review strategy'}</Button
+									onclick={requestPreview}>{reviewing ? 'Reviewing…' : 'Review order'}</Button
 								>
 								<Button
 									type="button"

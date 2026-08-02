@@ -108,14 +108,6 @@ export function transitionOrder(
 	};
 }
 
-export function markOrderTriggered(order: AcceptedOrder, at: Date): AcceptedOrder {
-	if (!['open', 'partially_filled'].includes(order.status)) {
-		throw new OrderTransitionError(`Cannot trigger order in ${order.status} status`);
-	}
-	if (order.triggeredAt) return order;
-	return { ...order, triggeredAt: at, revision: order.revision + 1 };
-}
-
 export function applyStrategyFill(
 	order: AcceptedOrder,
 	strategyQuantity: Decimal,

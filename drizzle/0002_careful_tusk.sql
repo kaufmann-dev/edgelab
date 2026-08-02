@@ -1,0 +1,3 @@
+ALTER TABLE "trading_portfolio_policies" DROP CONSTRAINT "trading_portfolio_policies_permissions_check";--> statement-breakpoint
+ALTER TABLE "trading_portfolio_policies" DROP COLUMN "allow_defined_risk_spreads";--> statement-breakpoint
+ALTER TABLE "trading_portfolio_policies" ADD CONSTRAINT "trading_portfolio_policies_permissions_check" CHECK (not ("trading_portfolio_policies"."account_type" = 'cash' and "trading_portfolio_policies"."allow_short_equity"));
