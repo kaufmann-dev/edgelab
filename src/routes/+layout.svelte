@@ -140,8 +140,8 @@
 	);
 	let searchHref = $derived(
 		portfolio
-			? resolve('/p/[portfolioId]/markets', { portfolioId: portfolio.id })
-			: resolve('/portfolios')
+			? `${resolve('/p/[portfolioId]/markets', { portfolioId: portfolio.id })}#market-search`
+			: undefined
 	);
 	let activeNavId = $derived.by(() => {
 		const pathname = page.url.pathname;

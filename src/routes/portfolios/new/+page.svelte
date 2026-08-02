@@ -244,14 +244,14 @@
 												bind:checked={$formData.allowShortEquity}
 												class="mt-0.5 rounded-none transition-none"
 											/>
+											<div>
+												<Label>Short equities</Label>
+												<Description class="mt-1 text-xs leading-5 text-muted-foreground"
+													>Practice opening short stock positions. Requires margin.</Description
+												>
+											</div>
 										{/snippet}
 									</Control>
-									<div>
-										<Label>Short equities</Label>
-										<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-											>Practice opening short stock positions. Requires margin.</Description
-										>
-									</div>
 								</div>
 								<FieldErrors class="mt-2 text-xs text-destructive" />
 							</div>
@@ -268,15 +268,15 @@
 													bind:checked={$formData.allowLongOptions}
 													class="mt-0.5 rounded-none transition-none"
 												/>
+												<div>
+													<Label>Long options</Label>
+													<Description class="mt-1 text-xs leading-5 text-muted-foreground"
+														>Buy one standard call or put to open and sell an existing long contract
+														to close. Expiration-day orders are unavailable.</Description
+													>
+												</div>
 											{/snippet}
 										</Control>
-										<div>
-											<Label>Long options</Label>
-											<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-												>Buy one standard call or put to open and sell an existing long contract to
-												close. Expiration-day orders are unavailable.</Description
-											>
-										</div>
 									</div>
 									<FieldErrors class="mt-2 text-xs text-destructive" />
 								</div>
@@ -293,14 +293,14 @@
 												bind:checked={$formData.allowExtendedHours}
 												class="mt-0.5 rounded-none transition-none"
 											/>
+											<div>
+												<Label>Extended hours</Label>
+												<Description class="mt-1 text-xs leading-5 text-muted-foreground"
+													>Allow eligible stock limit orders outside the regular session.</Description
+												>
+											</div>
 										{/snippet}
 									</Control>
-									<div>
-										<Label>Extended hours</Label>
-										<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-											>Allow eligible stock limit orders outside the regular session.</Description
-										>
-									</div>
 								</div>
 								<FieldErrors class="mt-2 text-xs text-destructive" />
 							</div>
@@ -316,14 +316,14 @@
 												bind:checked={$formData.requireTradePlan}
 												class="mt-0.5 rounded-none transition-none"
 											/>
+											<div>
+												<Label>Require a trade plan</Label>
+												<Description class="mt-1 text-xs leading-5 text-muted-foreground"
+													>Require a written thesis before an opening order.</Description
+												>
+											</div>
 										{/snippet}
 									</Control>
-									<div>
-										<Label>Require a trade plan</Label>
-										<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-											>Require a written thesis before an opening order.</Description
-										>
-									</div>
 								</div>
 								<FieldErrors class="mt-2 text-xs text-destructive" />
 							</div>
@@ -512,14 +512,14 @@
 											bind:checked={acknowledged}
 											class="mt-0.5 rounded-none transition-none"
 										/>
+										<div>
+											<Label id="confirmation-title">I understand this is a simulation</Label>
+											<Description class="mt-1 text-sm leading-6 text-muted-foreground"
+												>Orders use simulated funds and cannot buy or sell real securities.</Description
+											>
+										</div>
 									{/snippet}
 								</Control>
-								<div>
-									<Label id="confirmation-title">I understand this is a simulation</Label>
-									<Description class="mt-1 text-sm leading-6 text-muted-foreground"
-										>Orders use simulated funds and cannot buy or sell real securities.</Description
-									>
-								</div>
 							</div>
 							<FieldErrors class="mt-2 text-xs text-destructive" />
 						</div>

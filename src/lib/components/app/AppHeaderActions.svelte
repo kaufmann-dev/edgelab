@@ -17,7 +17,7 @@
 
 	interface Props {
 		user: HeaderUser;
-		searchHref: string;
+		searchHref?: string;
 	}
 
 	let { user, searchHref }: Props = $props();
@@ -31,15 +31,17 @@
 	let themeLabel = $derived(isDark ? 'Switch to light theme' : 'Switch to dark theme');
 </script>
 
-<Button
-	href={searchHref}
-	variant="ghost"
-	class="h-10 rounded-none px-2 shadow-none transition-none sm:px-3"
-	aria-label="Search stocks and options"
->
-	<SearchIcon class="size-4" aria-hidden="true" />
-	<span class="hidden sm:inline">Search</span>
-</Button>
+{#if searchHref}
+	<Button
+		href={searchHref}
+		variant="ghost"
+		class="h-10 rounded-none px-2 shadow-none transition-none sm:px-3"
+		aria-label="Search stocks and options"
+	>
+		<SearchIcon class="size-4" aria-hidden="true" />
+		<span class="hidden sm:inline">Search</span>
+	</Button>
+{/if}
 
 <Button
 	type="button"
