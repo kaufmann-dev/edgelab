@@ -93,6 +93,7 @@ function orderRow(overrides: Partial<OrderRow> = {}): OrderRow {
 		acceptedAt: now,
 		eligibleAt: new Date(now.getTime() + 250),
 		triggeredAt: null,
+		lastEvaluatedBarEndAt: null,
 		terminalAt: null,
 		rejectionReason: null,
 		revision: 2,

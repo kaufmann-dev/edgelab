@@ -23,6 +23,16 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	if (Date.parse(from.data) > Date.parse(to.data)) {
 		return json({ error: 'The from date must not be after the to date.' }, { status: 400 });
 	}
+	const environment = getMarketEnvironment();
+	const capability = environment.capabilities[assetClass];
+	if (!capability.minuteBars) {
+		return json(
+			{
+				error: `${assetClass === 'stocks' ? 'Stock' : 'Option'} aggregate bars are not included in the configured Massive plan.`
+			},
+			{ status: 409 }
+		);
+	}
 
 	try {
 		const page = await getMarketDataProvider().getBars({
@@ -36,7 +46,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		});
 		return json({
 			items: page.items.map(serializeBar),
-			feed: getMarketEnvironment().capabilities[assetClass],
+			feed: capability,
 			nextUrlAvailable: Boolean(page.nextUrl)
 		});
 	} catch (cause) {

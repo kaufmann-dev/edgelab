@@ -6,16 +6,17 @@
 	interface Props {
 		initialQuote: StockQuote;
 		delayed: boolean;
+		events: readonly string[];
 		onQuote: (quote: StockQuote) => void;
 		onFeedState: (state: MarketFeedState) => void;
 	}
 
-	let { initialQuote, delayed, onQuote, onFeedState }: Props = $props();
+	let { initialQuote, delayed, events, onQuote, onFeedState }: Props = $props();
 
 	onMount(() => {
 		let current = initialQuote;
 		const source = new EventSource(
-			`/api/market/stream?assetClass=stocks&symbols=${encodeURIComponent(initialQuote.symbol)}&events=Q,T`
+			`/api/market/stream?assetClass=stocks&symbols=${encodeURIComponent(initialQuote.symbol)}&events=${encodeURIComponent(events.join(','))}`
 		);
 		onFeedState('connecting');
 
@@ -41,7 +42,9 @@
 					bidPrice?: string;
 					askPrice?: string;
 					price?: string;
+					close?: string;
 					sourceTime?: string;
+					endTime?: string;
 				};
 				if (marketEvent.symbol !== initialQuote.symbol) return;
 				if (marketEvent.kind === 'quote' && marketEvent.bidPrice && marketEvent.askPrice) {
@@ -59,6 +62,14 @@
 						...current,
 						last: new Decimal(marketEvent.price).toNumber(),
 						asOf: marketEvent.sourceTime ?? current.asOf
+					};
+				} else if (marketEvent.kind === 'bar' && marketEvent.close) {
+					current = {
+						...current,
+						last: new Decimal(marketEvent.close).toNumber(),
+						bid: undefined,
+						ask: undefined,
+						asOf: marketEvent.endTime ?? marketEvent.sourceTime ?? current.asOf
 					};
 				} else {
 					return;

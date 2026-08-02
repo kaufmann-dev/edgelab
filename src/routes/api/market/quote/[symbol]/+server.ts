@@ -15,6 +15,15 @@ export const GET: RequestHandler = async ({ params }) => {
 	const parsed = symbolSchema.safeParse(params.symbol);
 	if (!parsed.success) return json({ error: 'Invalid US stock symbol.' }, { status: 400 });
 	const environment = getMarketEnvironment();
+	if (!environment.capabilities.stocks.quotes) {
+		return json(
+			{
+				error: 'Stock quotes are not included in the configured Massive plan.',
+				feed: environment.capabilities.stocks
+			},
+			{ status: 409 }
+		);
+	}
 	if (!environment.capabilities.stocks.snapshots) {
 		return json(
 			{

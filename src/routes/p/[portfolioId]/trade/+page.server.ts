@@ -1,10 +1,12 @@
-import Decimal from 'decimal.js';
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
+import { loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
 import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
 import {
 	MassiveHttpError,
+	supportsOptionsExecution,
 	type MarketSnapshot,
+	type NormalizedBar,
 	type OptionSnapshot
 } from '$lib/server/market-data';
 import {
@@ -22,24 +24,14 @@ const symbolSchema = z
 	.regex(/^[A-Z][A-Z0-9.]{0,14}$/);
 const expirationSchema = z.string().date();
 
-function priceForSnapshot(snapshot: MarketSnapshot): Decimal | null {
-	if (snapshot.lastTrade) return snapshot.lastTrade.price;
-	if (snapshot.quote?.bidPrice.greaterThan(0) && snapshot.quote.askPrice.greaterThan(0)) {
-		return snapshot.quote.bidPrice.plus(snapshot.quote.askPrice).dividedBy(2);
-	}
-	return snapshot.lastMinute?.close ?? null;
-}
-
-function stockQuote(snapshot: MarketSnapshot) {
-	const last = priceForSnapshot(snapshot);
-	if (!last) return null;
+function stockQuote(snapshot: MarketSnapshot, completedMinute: NormalizedBar) {
 	return {
 		symbol: snapshot.symbol,
 		name: snapshot.name,
-		last: last.toNumber(),
+		last: completedMinute.close.toNumber(),
 		bid: snapshot.quote?.bidPrice.toNumber(),
 		ask: snapshot.quote?.askPrice.toNumber(),
-		asOf: snapshot.asOf.toISOString()
+		asOf: completedMinute.endTime.toISOString()
 	};
 }
 
@@ -112,13 +104,25 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 	]);
 	const rawSymbol = (url.searchParams.get('symbol') ?? '').trim().toUpperCase();
 	const parsedSymbol = rawSymbol ? symbolSchema.safeParse(rawSymbol) : null;
-	const assetView = url.searchParams.get('asset') === 'options' ? 'options' : 'stock';
+	const requestedAssetView = url.searchParams.get('asset') === 'options' ? 'options' : 'stock';
 	const rawExpiration = url.searchParams.get('expiration');
 	const expiration = rawExpiration ? expirationSchema.safeParse(rawExpiration) : null;
+	const environment = getMarketEnvironment();
+	const stockExecutionMode = environment.capabilities.stocks.executionMode;
+	const stockDelayMinutes = environment.capabilities.stocks.delayMinutes;
+	if (!stockExecutionMode || stockDelayMinutes === null) {
+		error(503, 'The configured stock plan does not provide an executable market-data clock.');
+	}
 
 	let quote = null;
 	let marketFeed = null;
 	let marketError: string | null = null;
+	const optionsTradingEnabled =
+		stockExecutionMode === portfolio.dataMode && supportsOptionsExecution(environment.capabilities);
+	const optionsDataEnabled = environment.capabilities.options.snapshots;
+	const optionsTradingReason = optionsTradingEnabled
+		? ''
+		: 'Option trading is not enabled by the configured Massive plans.';
 	let options = { rows: [], expiration: null, expirations: [], error: null } as {
 		rows: ReturnType<typeof optionRows>;
 		expiration: string | null;
@@ -128,34 +132,44 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 
 	if (parsedSymbol?.success) {
 		try {
-			const environment = getMarketEnvironment();
 			if (!environment.capabilities.stocks.snapshots) {
 				marketError = 'Stock snapshots are not included in the configured Massive plan.';
 			} else {
-				const snapshots = await getMarketDataProvider().getUnifiedSnapshots([parsedSymbol.data]);
+				const provider = getMarketDataProvider();
+				const [snapshots, completedMinute] = await Promise.all([
+					provider.getUnifiedSnapshots([parsedSymbol.data]),
+					loadLatestCompletedMinuteBar({
+						provider,
+						assetClass: 'stocks',
+						symbol: parsedSymbol.data,
+						mode: stockExecutionMode,
+						delayMinutes: stockDelayMinutes
+					})
+				]);
 				const snapshot = snapshots.items.find(
 					(item) => item.assetClass === 'stocks' && item.symbol === parsedSymbol.data
 				);
-				if (snapshot) {
-					quote = stockQuote(snapshot);
+				if (snapshot && completedMinute) {
+					quote = stockQuote(snapshot, completedMinute);
 					marketFeed = {
 						state: snapshot.mode === 'realtime' ? ('live' as const) : ('delayed' as const),
 						modeLabel: environment.capabilities.stocks.label,
 						streaming:
 							environment.capabilities.stocks.websocket &&
-							environment.capabilities.stocks.quotes &&
-							environment.capabilities.stocks.trades,
-						asOf: snapshot.asOf.toISOString()
+							environment.capabilities.stocks.secondBars,
+						events: ['A'],
+						priceSource: 'aggregate' as const,
+						asOf: quote.asOf
 					};
+				} else if (snapshot) {
+					marketError = 'Massive returned no recent completed minute aggregate for this symbol.';
 				} else {
 					marketError = 'Massive returned no stock snapshot for this symbol.';
 				}
 			}
 
-			if (assetView === 'options') {
-				if (!environment.capabilities.options.snapshots) {
-					options.error = 'Option chains are not included in the configured Massive plan.';
-				} else if (expiration && !expiration.success) {
+			if (requestedAssetView === 'options' && optionsDataEnabled) {
+				if (expiration && !expiration.success) {
 					options.error = 'Expiration must use YYYY-MM-DD.';
 				} else {
 					const chain = await getMarketDataProvider().getOptionChain(parsedSymbol.data, {
@@ -178,15 +192,21 @@ export const load: PageServerLoad = async ({ locals, params, url, setHeaders }) 
 				}
 			}
 		} catch (cause) {
-			if (assetView === 'options') options.error = providerError(cause);
-			else marketError = providerError(cause);
+			if (requestedAssetView === 'options' && optionsDataEnabled) {
+				options.error = providerError(cause);
+			} else marketError = providerError(cause);
 		}
 	}
+	const assetView = requestedAssetView === 'options' && optionsDataEnabled ? 'options' : 'stock';
 
 	return {
 		requestedSymbol: rawSymbol,
 		symbolValid: parsedSymbol?.success ?? rawSymbol.length === 0,
 		assetView,
+		optionsViewRequested: requestedAssetView === 'options',
+		optionsDataEnabled,
+		optionsTradingEnabled,
+		optionsTradingReason,
 		quote,
 		marketFeed,
 		marketError,

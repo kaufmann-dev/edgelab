@@ -28,6 +28,9 @@
 
 	let label = $derived(stateLabels[state]);
 	let detail = $derived([marketSession, updatedLabel].filter(Boolean).join(' · '));
+	let visibleDetail = $derived(
+		[detail, asOf ? `As of ${asOf}` : undefined].filter(Boolean).join(' · ')
+	);
 	let title = $derived(
 		[label, detail, asOf ? `As of ${asOf}` : undefined].filter(Boolean).join('. ')
 	);
@@ -66,8 +69,8 @@
 		<RadioTowerIcon class="size-3.5 shrink-0" aria-hidden="true" />
 	{/if}
 	<span class="shrink-0">{label}</span>
-	{#if !compact && detail}
+	{#if !compact && visibleDetail}
 		<span aria-hidden="true" class="text-current/50">·</span>
-		<span class="truncate font-normal">{detail}</span>
+		<span class="truncate font-normal">{visibleDetail}</span>
 	{/if}
 </div>

@@ -16,7 +16,12 @@ import {
 	type ResolvedOrderLeg,
 	type StrategyFill
 } from './types';
-import { type ExecutableQuoteContext, validateExecutableQuotes } from './quote-validation';
+import {
+	type ExecutableBarContext,
+	type ExecutableQuoteContext,
+	validateExecutableBar,
+	validateExecutableQuotes
+} from './quote-validation';
 
 const BPS_DENOMINATOR = new Decimal(10_000);
 
@@ -215,30 +220,46 @@ function barCapacity(bar: NormalizedBar, leg: ResolvedOrderLeg, model: Execution
 	return Decimal.max(capacity, 0);
 }
 
-function rawBarFillPrice(
-	order: AcceptedOrder,
+interface RawBarFillEvaluation {
+	price?: Decimal;
+	triggered: boolean;
+	applyMarketSlippage: boolean;
+}
+
+function rawLimitFillPrice(
+	leg: ResolvedOrderLeg,
+	limitPrice: Decimal,
 	bar: NormalizedBar
-): { price?: Decimal; triggered: boolean; applyMarketSlippage: boolean } {
+): Decimal | undefined {
+	if (leg.side === 'buy') {
+		if (bar.open.lessThanOrEqualTo(limitPrice)) return bar.open;
+		return bar.low.lessThanOrEqualTo(limitPrice) ? limitPrice : undefined;
+	}
+	if (bar.open.greaterThanOrEqualTo(limitPrice)) return bar.open;
+	return bar.high.greaterThanOrEqualTo(limitPrice) ? limitPrice : undefined;
+}
+
+function rawBarFillPrice(order: AcceptedOrder, bar: NormalizedBar): RawBarFillEvaluation {
 	const leg = order.legs[0];
-	if (order.type === 'market')
-		return { price: bar.open, triggered: true, applyMarketSlippage: true };
+	if (order.type === 'market') {
+		return { price: bar.open, triggered: false, applyMarketSlippage: true };
+	}
 	if (order.type === 'limit' && order.limitPrice) {
-		if (leg.side === 'buy') {
-			if (bar.open.lessThanOrEqualTo(order.limitPrice)) {
-				return { price: bar.open, triggered: true, applyMarketSlippage: false };
-			}
-			if (bar.low.lessThanOrEqualTo(order.limitPrice)) {
-				return { price: order.limitPrice, triggered: true, applyMarketSlippage: false };
-			}
-		} else {
-			if (bar.open.greaterThanOrEqualTo(order.limitPrice)) {
-				return { price: bar.open, triggered: true, applyMarketSlippage: false };
-			}
-			if (bar.high.greaterThanOrEqualTo(order.limitPrice)) {
-				return { price: order.limitPrice, triggered: true, applyMarketSlippage: false };
-			}
-		}
-		return { triggered: false, applyMarketSlippage: false };
+		return {
+			price: rawLimitFillPrice(leg, order.limitPrice, bar),
+			triggered: false,
+			applyMarketSlippage: false
+		};
+	}
+	if (order.type === 'stop' && order.triggeredAt) {
+		return { price: bar.open, triggered: true, applyMarketSlippage: true };
+	}
+	if (order.type === 'stop_limit' && order.triggeredAt && order.limitPrice) {
+		return {
+			price: rawLimitFillPrice(leg, order.limitPrice, bar),
+			triggered: true,
+			applyMarketSlippage: false
+		};
 	}
 	if ((order.type === 'stop' || order.type === 'stop_limit') && order.stopPrice) {
 		const gapTriggered =
@@ -249,19 +270,19 @@ function rawBarFillPrice(
 			leg.side === 'buy'
 				? bar.high.greaterThanOrEqualTo(order.stopPrice)
 				: bar.low.lessThanOrEqualTo(order.stopPrice);
-		if (!gapTriggered && !rangeTriggered) return { triggered: false, applyMarketSlippage: false };
+		if (!gapTriggered && !rangeTriggered) {
+			return { triggered: false, applyMarketSlippage: false };
+		}
 		if (order.type === 'stop_limit') {
-			if (!order.triggeredAt && !gapTriggered) {
+			if (!gapTriggered || !order.limitPrice) {
 				return { triggered: true, applyMarketSlippage: false };
 			}
-			if (!order.limitPrice) return { triggered: true, applyMarketSlippage: false };
-			const candidate = gapTriggered ? bar.open : order.limitPrice;
 			const respectsLimit =
 				leg.side === 'buy'
-					? candidate.lessThanOrEqualTo(order.limitPrice)
-					: candidate.greaterThanOrEqualTo(order.limitPrice);
+					? bar.open.lessThanOrEqualTo(order.limitPrice)
+					: bar.open.greaterThanOrEqualTo(order.limitPrice);
 			return {
-				price: respectsLimit ? candidate : undefined,
+				price: respectsLimit ? bar.open : undefined,
 				triggered: true,
 				applyMarketSlippage: false
 			};
@@ -284,23 +305,26 @@ export function calculateBarFill(input: {
 	order: AcceptedOrder;
 	bar: NormalizedBar;
 	executionModel: ExecutionModel;
+	barContext: ExecutableBarContext;
 	feeModel?: FeeModel;
 }): BarFillEvaluation {
 	const { order, bar } = input;
 	if (order.legs.length !== 1 || !['open', 'partially_filled'].includes(order.status)) {
 		return { triggered: false };
 	}
-	if (bar.symbol !== order.legs[0].symbol || bar.startTime < order.eligibleAt) {
+	const leg = order.legs[0];
+	if (bar.symbol !== leg.symbol || bar.assetClass !== leg.instrument.assetClass) {
 		return { triggered: false };
 	}
+	const validation = validateExecutableBar(bar, input.barContext, order.eligibleAt);
+	if (!validation.executable) return { triggered: false };
 	const executionModel = executionModelSchema.parse(input.executionModel);
 	const feeModel = feeModelSchema.parse(input.feeModel ?? {});
 	const evaluated = rawBarFillPrice(order, bar);
 	if (!evaluated.price) return { triggered: evaluated.triggered };
 	const remaining = order.quantity.minus(order.filledQuantity);
-	const strategyQuantity = Decimal.min(remaining, barCapacity(bar, order.legs[0], executionModel));
+	const strategyQuantity = Decimal.min(remaining, barCapacity(bar, leg, executionModel));
 	if (!strategyQuantity.greaterThan(0)) return { triggered: evaluated.triggered };
-	const leg = order.legs[0];
 	const quantity = strategyQuantity.times(leg.ratioQuantity);
 	const price = evaluated.applyMarketSlippage
 		? applyExecutionSlippage(evaluated.price, leg, executionModel)
@@ -323,7 +347,7 @@ export function calculateBarFill(input: {
 			sourceEventKind: 'bar',
 			sourceTime: bar.sourceTime,
 			receivedAt: bar.receivedAt,
-			sourceSequence: bar.sequence,
+			sourceSequence: bar.sequence ?? bar.rawTimestamp,
 			executionModelVersion: executionModel.version
 		}
 	};

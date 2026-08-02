@@ -200,9 +200,9 @@ class AssetStream {
 				`${this.#assetClass} WebSocket data is not included in the configured Massive plan`
 			);
 		}
-		if (this.#mode === 'realtime' && capabilities.mode !== 'realtime') {
+		if (this.#mode !== capabilities.executionMode) {
 			throw new Error(
-				`${this.#assetClass} real-time WebSocket data is not included in the configured Massive plan`
+				`${this.#assetClass} ${this.#mode} WebSocket data does not match the configured Massive plan`
 			);
 		}
 		const topics = this.#combinedTopics();
@@ -214,6 +214,21 @@ class AssetStream {
 		if ([...topics].some((topic) => topic.startsWith('T.')) && !capabilities.trades) {
 			throw new Error(
 				`${this.#assetClass} WebSocket trades are not included in the configured Massive plan`
+			);
+		}
+		if ([...topics].some((topic) => topic.startsWith('A.')) && !capabilities.secondBars) {
+			throw new Error(
+				`${this.#assetClass} WebSocket second aggregates are not included in the configured Massive plan`
+			);
+		}
+		if ([...topics].some((topic) => topic.startsWith('AM.')) && !capabilities.minuteBars) {
+			throw new Error(
+				`${this.#assetClass} WebSocket minute aggregates are not included in the configured Massive plan`
+			);
+		}
+		if ([...topics].some((topic) => topic.startsWith('LULD.')) && !capabilities.luld) {
+			throw new Error(
+				`${this.#assetClass} LULD events are not included in the configured Massive plan`
 			);
 		}
 	}
@@ -314,7 +329,9 @@ class MarketStreamHub {
 	}
 
 	#configuredMode(assetClass: AssetClass): MarketDataMode {
-		return getMarketEnvironment().capabilities[assetClass].mode;
+		const mode = getMarketEnvironment().capabilities[assetClass].executionMode;
+		if (!mode) throw new Error(`${assetClass} has no executable WebSocket clock`);
+		return mode;
 	}
 
 	subscribe(

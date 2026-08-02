@@ -1,5 +1,10 @@
 import Decimal from 'decimal.js';
-import type { Instrument, NormalizedQuote, OptionInstrument } from '../market-data/types';
+import type {
+	Instrument,
+	NormalizedBar,
+	NormalizedQuote,
+	OptionInstrument
+} from '../market-data/types';
 import { money } from '../market-data/numeric';
 import { applyExecutionSlippage } from './execution';
 import {
@@ -66,6 +71,50 @@ function validateRequiredQuotes(
 	return { invalidSymbols, globallyInvalid: globalMessages.length > 0 };
 }
 
+function validateRequiredBars(
+	symbols: readonly string[],
+	bars: ReadonlyMap<string, NormalizedBar>,
+	context: ExecutableQuoteContext,
+	violations: RiskViolation[]
+): Set<string> {
+	const invalidSymbols = new Set<string>();
+	const logicalAt = new Date(context.attemptAt.getTime() - context.expectedDelayMilliseconds);
+	for (const symbol of symbols) {
+		const bar = bars.get(symbol);
+		if (!bar) {
+			invalidSymbols.add(symbol);
+			violations.push({
+				code: 'market_data_unavailable',
+				message: `No aggregate price is available for ${symbol}`,
+				symbol
+			});
+			continue;
+		}
+		const transportAge = context.attemptAt.getTime() - bar.receivedAt.getTime();
+		const sourceAge = logicalAt.getTime() - bar.endTime.getTime();
+		const completeMinute =
+			bar.interval === 'minute' &&
+			bar.endTime.getTime() - bar.startTime.getTime() === 60_000 &&
+			bar.sourceTime.getTime() === bar.endTime.getTime();
+		if (
+			bar.mode !== context.expectedMode ||
+			!completeMinute ||
+			transportAge > context.maxTransportAgeMilliseconds ||
+			transportAge < -context.futureToleranceMilliseconds ||
+			sourceAge > context.maxSourceAgeMilliseconds ||
+			sourceAge < -context.futureToleranceMilliseconds
+		) {
+			invalidSymbols.add(symbol);
+			violations.push({
+				code: 'market_data_stale',
+				message: `${symbol} does not have a fresh, completed minute aggregate for this portfolio's market clock`,
+				symbol
+			});
+		}
+	}
+	return invalidSymbols;
+}
+
 function variableFee(instrument: Instrument, quantity: Decimal, model: FeeModel): Decimal {
 	return money(
 		instrument.assetClass === 'stocks'
@@ -78,16 +127,18 @@ function referencePrice(
 	draft: OrderDraft,
 	leg: ResolvedOrderLeg,
 	quote: NormalizedQuote | undefined,
+	bar: NormalizedBar | undefined,
 	executionModel: ExecutionModel
 ): Decimal | undefined {
 	if (draft.type === 'limit' || draft.type === 'stop_limit') {
 		if (draft.legs.length === 1) return draft.limitPrice;
-		return leg.side === 'buy' ? quote?.askPrice : quote?.bidPrice;
 	}
 	const price =
-		leg.side === 'buy'
-			? (quote?.askPrice ?? draft.stopPrice)
-			: (quote?.bidPrice ?? draft.stopPrice);
+		leg.instrument.assetClass === 'stocks'
+			? bar?.close
+			: leg.side === 'buy'
+				? quote?.askPrice
+				: quote?.bidPrice;
 	if (!price || draft.type !== 'market') return price;
 	return applyExecutionSlippage(price, leg, executionModel);
 }
@@ -235,6 +286,7 @@ export function previewOrder(input: {
 	draft: OrderDraft;
 	instruments: ReadonlyMap<string, Instrument>;
 	quotes: ReadonlyMap<string, NormalizedQuote>;
+	bars: ReadonlyMap<string, NormalizedBar>;
 	account: PortfolioAccountState;
 	executionModel: ExecutionModel;
 	quoteContext: ExecutableQuoteContext;
@@ -247,21 +299,34 @@ export function previewOrder(input: {
 	const violations: RiskViolation[] = [];
 	const previews: LegPreview[] = [];
 	const resolvedLegs: ResolvedOrderLeg[] = [];
-	const requiresQuotes = !['limit', 'stop_limit'].includes(draft.type) || draft.legs.length > 1;
-	const quoteValidation = requiresQuotes
-		? validateRequiredQuotes(
-				draft.legs.map((leg) => leg.symbol),
-				input.quotes,
-				{
-					...quoteContext,
-					maxTransportAgeMilliseconds: Math.min(
-						quoteContext.maxTransportAgeMilliseconds,
-						input.account.riskPolicy.quoteMaxAgeMilliseconds
-					)
-				},
-				violations
-			)
-		: { invalidSymbols: new Set<string>(), globallyInvalid: false };
+	const singleLegPriceOrder =
+		draft.legs.length === 1 && ['limit', 'stop_limit'].includes(draft.type);
+	const quoteSymbols = singleLegPriceOrder
+		? []
+		: draft.legs.flatMap((leg) =>
+				input.instruments.get(leg.symbol)?.assetClass === 'options' ? [leg.symbol] : []
+			);
+	const quoteValidation =
+		quoteSymbols.length > 0
+			? validateRequiredQuotes(
+					quoteSymbols,
+					input.quotes,
+					{
+						...quoteContext,
+						maxTransportAgeMilliseconds: Math.min(
+							quoteContext.maxTransportAgeMilliseconds,
+							input.account.riskPolicy.quoteMaxAgeMilliseconds
+						)
+					},
+					violations
+				)
+			: { invalidSymbols: new Set<string>(), globallyInvalid: false };
+	const barSymbols = singleLegPriceOrder
+		? []
+		: draft.legs.flatMap((leg) =>
+				input.instruments.get(leg.symbol)?.assetClass === 'stocks' ? [leg.symbol] : []
+			);
+	const invalidBarSymbols = validateRequiredBars(barSymbols, input.bars, quoteContext, violations);
 
 	if (input.account.openOrderCount >= input.account.riskPolicy.maxOpenOrders) {
 		violations.push({
@@ -343,12 +408,17 @@ export function previewOrder(input: {
 		}
 
 		const quote =
-			requiresQuotes &&
+			quoteSymbols.includes(instrument.symbol) &&
 			!quoteValidation.globallyInvalid &&
 			!quoteValidation.invalidSymbols.has(instrument.symbol)
 				? input.quotes.get(instrument.symbol)
 				: undefined;
-		const price = referencePrice(draft, leg, quote, executionModel);
+		const requiresBar = instrument.assetClass === 'stocks' && !singleLegPriceOrder;
+		const bar =
+			requiresBar && !invalidBarSymbols.has(instrument.symbol)
+				? input.bars.get(instrument.symbol)
+				: undefined;
+		const price = referencePrice(draft, leg, quote, bar, executionModel);
 		if (!price) continue;
 		const multiplier = instrument.assetClass === 'options' ? instrument.multiplier : new Decimal(1);
 		previews.push({

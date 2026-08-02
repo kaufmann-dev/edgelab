@@ -1,14 +1,16 @@
 import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
 import {
+	normalizedBarSchema,
 	normalizedQuoteSchema,
 	optionInstrumentSchema,
 	stockInstrumentSchema,
 	type Instrument,
+	type NormalizedBar,
 	type OptionInstrument,
 	type StockInstrument
 } from '../market-data/types';
-import { calculateQuoteFill } from './execution';
+import { calculateBarFill, calculateQuoteFill } from './execution';
 import { applyFillToLedger, assertCashLedgerInvariant, LedgerInvariantError } from './ledger';
 import {
 	acceptedOrderMatchesDraft,
@@ -19,7 +21,12 @@ import {
 	transitionOrder
 } from './orders';
 import { previewOrder } from './risk';
-import { executableQuoteContextSchema, type ExecutableQuoteContext } from './quote-validation';
+import {
+	executableBarContextSchema,
+	executableQuoteContextSchema,
+	type ExecutableBarContext,
+	type ExecutableQuoteContext
+} from './quote-validation';
 import {
 	executionModelSchema,
 	orderDraftSchema,
@@ -151,18 +158,54 @@ function quoteContext(overrides: Partial<ExecutableQuoteContext> = {}): Executab
 	});
 }
 
+function barContext(overrides: Partial<ExecutableBarContext> = {}): ExecutableBarContext {
+	return executableBarContextSchema.parse({
+		attemptAt: new Date('2026-01-02T14:30:02.000Z'),
+		expectedMode: 'delayed',
+		expectedDelayMilliseconds: 15 * 60_000,
+		maxTransportAgeMilliseconds: 60_000,
+		maxSourceAgeMilliseconds: 60_000,
+		futureToleranceMilliseconds: 1_000,
+		...overrides
+	});
+}
+
+function bar(overrides: Partial<NormalizedBar> = {}): NormalizedBar {
+	const startTime = new Date('2026-01-02T14:15:01.000Z');
+	const endTime = new Date('2026-01-02T14:15:02.000Z');
+	return normalizedBarSchema.parse({
+		kind: 'bar',
+		assetClass: 'stocks',
+		symbol: 'AAPL',
+		mode: 'delayed',
+		interval: 'second',
+		startTime,
+		endTime,
+		open: new Decimal(100),
+		high: new Decimal(102),
+		low: new Decimal(99),
+		close: new Decimal(101),
+		volume: new Decimal(8),
+		sourceTime: endTime,
+		receivedAt: new Date('2026-01-02T14:30:02.000Z'),
+		rawTimestamp: endTime.getTime().toString(),
+		...overrides
+	});
+}
+
 type PreviewInput = Parameters<typeof previewOrder>[0];
 
 function preview(
-	input: Omit<PreviewInput, 'executionModel' | 'quoteContext'> &
-		Partial<Pick<PreviewInput, 'executionModel' | 'quoteContext'>>
+	input: Omit<PreviewInput, 'bars' | 'executionModel' | 'quoteContext'> &
+		Partial<Pick<PreviewInput, 'bars' | 'executionModel' | 'quoteContext'>>
 ) {
 	const {
+		bars = new Map(),
 		executionModel = previewExecutionModel,
 		quoteContext: context = quoteContext(),
 		...previewInput
 	} = input;
-	return previewOrder({ ...previewInput, executionModel, quoteContext: context });
+	return previewOrder({ ...previewInput, bars, executionModel, quoteContext: context });
 }
 
 describe('paper-order state machine', () => {
@@ -386,15 +429,34 @@ describe('order preview and collateral', () => {
 		expect(second.violations.map((violation) => violation.code)).toContain('insufficient_position');
 	});
 
-	it('reserves a market buy using the execution model slippage', () => {
+	it('reserves a stock market buy from the aggregate close and ignores quotes', () => {
 		const equity = stock();
 		const marketOrder = draft({ type: 'market', limitPrice: undefined });
+		const aggregateEnd = new Date('2026-01-02T14:15:02.000Z');
 		const previewResult = preview({
 			draft: marketOrder,
 			instruments: new Map([[equity.symbol, equity]]),
-			quotes: new Map([[equity.symbol, quote(equity.symbol, { bid: '99', ask: '100' })]]),
+			quotes: new Map([[equity.symbol, quote(equity.symbol, { bid: '499', ask: '500' })]]),
+			bars: new Map([
+				[
+					equity.symbol,
+					bar({
+						interval: 'minute',
+						startTime: new Date(aggregateEnd.getTime() - 60_000),
+						endTime: aggregateEnd,
+						sourceTime: aggregateEnd,
+						open: new Decimal(99),
+						close: new Decimal(100)
+					})
+				]
+			]),
 			account: account({ cashBalance: new Decimal('100.05') }),
-			executionModel: executionModelSchema.parse({ stockSlippageBps: '10' })
+			executionModel: executionModelSchema.parse({ stockSlippageBps: '10' }),
+			quoteContext: quoteContext({
+				attemptAt: new Date('2026-01-02T14:30:02.000Z'),
+				expectedMode: 'delayed',
+				expectedDelayMilliseconds: 15 * 60_000
+			})
 		});
 
 		expect(previewResult.legs[0]?.referencePrice.toFixed(2)).toBe('100.10');
@@ -402,6 +464,53 @@ describe('order preview and collateral', () => {
 		expect(previewResult.cashRequired.toFixed(2)).toBe('100.10');
 		expect(previewResult.violations.map((violation) => violation.code)).toContain(
 			'insufficient_cash'
+		);
+	});
+
+	it('blocks a stale completed aggregate from stock preview pricing', () => {
+		const equity = stock();
+		const aggregateEnd = new Date('2026-01-02T14:10:00.000Z');
+		const previewResult = preview({
+			draft: draft({ type: 'market', limitPrice: undefined }),
+			instruments: new Map([[equity.symbol, equity]]),
+			quotes: new Map(),
+			bars: new Map([
+				[
+					equity.symbol,
+					bar({
+						interval: 'minute',
+						startTime: new Date(aggregateEnd.getTime() - 60_000),
+						endTime: aggregateEnd,
+						sourceTime: aggregateEnd
+					})
+				]
+			]),
+			account: account(),
+			quoteContext: quoteContext({
+				attemptAt: new Date('2026-01-02T14:30:02.000Z'),
+				expectedMode: 'delayed',
+				expectedDelayMilliseconds: 15 * 60_000
+			})
+		});
+
+		expect(previewResult.accepted).toBe(false);
+		expect(previewResult.violations.map((violation) => violation.code)).toContain(
+			'market_data_stale'
+		);
+	});
+
+	it('blocks a stock market preview when no aggregate price is available', () => {
+		const equity = stock();
+		const previewResult = preview({
+			draft: draft({ type: 'market', limitPrice: undefined }),
+			instruments: new Map([[equity.symbol, equity]]),
+			quotes: new Map([[equity.symbol, quote(equity.symbol, { bid: '99', ask: '100' })]]),
+			account: account()
+		});
+
+		expect(previewResult.accepted).toBe(false);
+		expect(previewResult.violations.map((violation) => violation.code)).toContain(
+			'market_data_unavailable'
 		);
 	});
 
@@ -569,6 +678,131 @@ describe('order preview and collateral', () => {
 });
 
 describe('deterministic fills and ledger invariants', () => {
+	it('executes a delayed market order on the first logically eligible second bar', () => {
+		const instrument = stock();
+		const order = acceptedOrder(
+			draft({ type: 'market', limitPrice: undefined, quantity: new Decimal(10) }),
+			[instrument]
+		);
+		const result = calculateBarFill({
+			order,
+			bar: bar(),
+			executionModel: executionModelSchema.parse({
+				stockSlippageBps: '10',
+				participationRate: '0.25'
+			}),
+			barContext: barContext()
+		});
+
+		expect(result.triggered).toBe(false);
+		expect(result.fill?.strategyQuantity.toFixed()).toBe('2');
+		expect(result.fill?.legs[0]?.price.toFixed(2)).toBe('100.10');
+		expect(result.fill?.sourceTime).toEqual(new Date('2026-01-02T14:15:02.000Z'));
+		expect(result.fill?.sourceSequence).toBe('1767363302000');
+	});
+
+	it('fills a touched limit at the limit and a favorable opening gap at the open', () => {
+		const instrument = stock();
+		const order = acceptedOrder(draft({ limitPrice: new Decimal(100) }), [instrument]);
+		const model = executionModelSchema.parse({});
+		const touched = calculateBarFill({
+			order,
+			bar: bar({ open: new Decimal(101), low: new Decimal(99) }),
+			executionModel: model,
+			barContext: barContext()
+		});
+		const improved = calculateBarFill({
+			order,
+			bar: bar({ open: new Decimal(99), low: new Decimal(98) }),
+			executionModel: model,
+			barContext: barContext()
+		});
+
+		expect(touched.fill?.legs[0]?.price.toFixed(2)).toBe('100.00');
+		expect(improved.fill?.legs[0]?.price.toFixed(2)).toBe('99.00');
+	});
+
+	it('triggers an intrabar stop and fills it as a slipped market order', () => {
+		const instrument = stock();
+		const order = acceptedOrder(
+			draft({ type: 'stop', limitPrice: undefined, stopPrice: new Decimal(105) }),
+			[instrument]
+		);
+		const result = calculateBarFill({
+			order,
+			bar: bar({ open: new Decimal(100), high: new Decimal(106) }),
+			executionModel: executionModelSchema.parse({ stockSlippageBps: '10' }),
+			barContext: barContext()
+		});
+
+		expect(result.triggered).toBe(true);
+		expect(result.fill?.legs[0]?.price.toFixed(2)).toBe('105.11');
+	});
+
+	it('treats an already-triggered stop as market and stop-limit as an ordinary limit', () => {
+		const instrument = stock();
+		const triggeredAt = new Date('2026-01-02T14:15:00.000Z');
+		const triggeredStop = {
+			...acceptedOrder(
+				draft({ type: 'stop', limitPrice: undefined, stopPrice: new Decimal(105) }),
+				[instrument]
+			),
+			triggeredAt
+		};
+		const triggeredStopLimit = {
+			...acceptedOrder(
+				draft({ type: 'stop_limit', stopPrice: new Decimal(105), limitPrice: new Decimal(106) }),
+				[instrument]
+			),
+			triggeredAt
+		};
+		const aggregate = bar({
+			open: new Decimal(104),
+			high: new Decimal('104.50'),
+			low: new Decimal(103),
+			close: new Decimal(104)
+		});
+		const model = executionModelSchema.parse({ stockSlippageBps: '10' });
+
+		const marketResult = calculateBarFill({
+			order: triggeredStop,
+			bar: aggregate,
+			executionModel: model,
+			barContext: barContext()
+		});
+		const limitResult = calculateBarFill({
+			order: triggeredStopLimit,
+			bar: aggregate,
+			executionModel: model,
+			barContext: barContext()
+		});
+
+		expect(marketResult.fill?.legs[0]?.price.toFixed(2)).toBe('104.10');
+		expect(limitResult.fill?.legs[0]?.price.toFixed(2)).toBe('104.00');
+	});
+
+	it('triggers an intrabar stop-limit without filling until a later bar', () => {
+		const instrument = stock();
+		const order = acceptedOrder(
+			draft({ type: 'stop_limit', stopPrice: new Decimal(105), limitPrice: new Decimal(106) }),
+			[instrument]
+		);
+		const result = calculateBarFill({
+			order,
+			bar: bar({
+				open: new Decimal(100),
+				high: new Decimal(107),
+				low: new Decimal(99),
+				close: new Decimal(106)
+			}),
+			executionModel: executionModelSchema.parse({}),
+			barContext: barContext()
+		});
+
+		expect(result.triggered).toBe(true);
+		expect(result.fill).toBeUndefined();
+	});
+
 	it('executes an IOC attempt captured after acceptance against a newly received quote', () => {
 		const instrument = stock();
 		const order = createAcceptedOrder({

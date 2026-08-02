@@ -18,6 +18,7 @@
 		type RiskCheck,
 		type StockOrderDraft,
 		type StockOrderDraftPatch,
+		type StockOrderType,
 		type StockQuote
 	} from '$lib/components/trading';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
@@ -112,6 +113,12 @@
 		if (feed && feed.symbol === data.quote?.symbol) return feed.state;
 		return data.marketFeed?.state;
 	});
+	let aggregatePricing = $derived(data.marketFeed?.priceSource === 'aggregate');
+	let availableStockOrderTypes = $derived<StockOrderType[]>(
+		aggregatePricing
+			? ['market', 'limit', 'stop', 'stop-limit']
+			: ['market', 'limit', 'stop', 'stop-limit', 'trailing-stop']
+	);
 	let stockTabPath = $derived(
 		`${tradeRoute}?symbol=${encodeURIComponent(data.requestedSymbol)}&asset=stock` as Pathname
 	);
@@ -143,7 +150,7 @@
 					id: 'portfolio-policy',
 					label: 'Portfolio policy',
 					status: 'pass',
-					detail: 'Buying power, permissions, quote freshness, and configured limits passed.'
+					detail: 'Buying power, permissions, market-data freshness, and configured limits passed.'
 				}
 			];
 		}
@@ -179,7 +186,7 @@
 	}
 
 	function stockPayload() {
-		if (!displayedQuote) throw new Error('A provider quote is required.');
+		if (!displayedQuote) throw new Error('A provider market price is required.');
 		let enteredQuantity: Decimal;
 		try {
 			enteredQuantity = new Decimal(stockDraft.quantity);
@@ -189,7 +196,9 @@
 		if (!enteredQuantity.isFinite() || !enteredQuantity.greaterThan(0)) {
 			throw new Error('Enter a quantity greater than zero.');
 		}
-		const referencePrice = new Decimal(displayedQuote.ask ?? displayedQuote.last);
+		const referencePrice = new Decimal(
+			aggregatePricing ? displayedQuote.last : (displayedQuote.ask ?? displayedQuote.last)
+		);
 		const quantity =
 			stockDraft.quantityMode === 'notional'
 				? enteredQuantity.div(referencePrice).toDecimalPlaces(8, Decimal.ROUND_DOWN)
@@ -260,7 +269,9 @@
 	}
 
 	function currentPayload() {
-		return data.assetView === 'options' ? optionPayload() : stockPayload();
+		return data.optionsTradingEnabled && data.assetView === 'options'
+			? optionPayload()
+			: stockPayload();
 	}
 
 	async function requestPreview() {
@@ -373,7 +384,7 @@
 		</Button>
 	</form>
 
-	{#if data.requestedSymbol && data.symbolValid}
+	{#if data.requestedSymbol && data.symbolValid && data.optionsDataEnabled}
 		<nav class="flex border-b border-border" aria-label="Asset ticket">
 			<a
 				href={resolve(stockTabPath)}
@@ -399,6 +410,16 @@
 			<CircleAlertIcon aria-hidden="true" />
 			<AlertTitle>Order ticket unavailable</AlertTitle>
 			<AlertDescription>{ticketError ?? data.marketError}</AlertDescription>
+		</Alert>
+	{/if}
+
+	{#if data.optionsViewRequested && !data.optionsDataEnabled}
+		<Alert class="rounded-none shadow-none">
+			<CircleAlertIcon aria-hidden="true" />
+			<AlertTitle>Options data unavailable</AlertTitle>
+			<AlertDescription>
+				Add a Massive Options plan to view option-chain data. Stock simulation remains available.
+			</AlertDescription>
 		</Alert>
 	{/if}
 
@@ -444,6 +465,7 @@
 				<LiveStockStream
 					initialQuote={displayedQuote}
 					delayed={data.marketFeed.state === 'delayed'}
+					events={data.marketFeed.events}
 					onQuote={(quote) => (streamedQuote = quote)}
 					onFeedState={(state) => (streamedFeed = { symbol: displayedQuote.symbol, state })}
 				/>
@@ -456,6 +478,7 @@
 					draft={stockDraft}
 					onDraftChange={updateStockDraft}
 					onReview={requestPreview}
+					availableOrderTypes={availableStockOrderTypes}
 					availableSides={data.policy?.allowShortEquity
 						? ['buy', 'sell', 'sell-short', 'buy-to-cover']
 						: ['buy', 'sell']}
@@ -465,6 +488,8 @@
 					feedState={displayedFeedState}
 					marketSession={data.marketFeed?.modeLabel}
 					feedUpdatedLabel="Provider timestamp"
+					priceSource={data.marketFeed?.priceSource}
+					allowIoc={!aggregatePricing}
 					reviewDisabled={Boolean(receipt)}
 					{reviewing}
 				/>
@@ -486,7 +511,7 @@
 					</div>
 					<div class="flex justify-between gap-4 py-3">
 						<dt class="text-muted-foreground">Data mode</dt>
-						<dd class="font-medium">{data.portfolio.dataMode}</dd>
+						<dd class="font-medium">{data.marketFeed?.modeLabel ?? data.portfolio.dataMode}</dd>
 					</div>
 				</dl>
 				{#if preview}
@@ -507,7 +532,7 @@
 				</p>
 			</aside>
 		</div>
-	{:else if data.assetView === 'options' && data.requestedSymbol}
+	{:else if data.optionsDataEnabled && data.assetView === 'options' && data.requestedSymbol}
 		<div class="space-y-5">
 			<div class="flex flex-col gap-3 border border-border p-4 lg:flex-row lg:items-end">
 				<form method="GET" action={tradeRoute} class="flex flex-1 flex-wrap items-end gap-2">
@@ -529,10 +554,23 @@
 					>
 				</form>
 				<p class="max-w-xl text-xs text-muted-foreground">
-					Up to four legs. Naked options are always blocked; portfolio permissions and collateral
-					are checked server-side.
+					{#if data.optionsTradingEnabled}
+						Up to four legs. Naked options are always blocked; portfolio permissions and collateral
+						are checked server-side.
+					{:else}
+						Chain data is available for research, but this plan does not include the execution feeds
+						required by the current options simulator.
+					{/if}
 				</p>
 			</div>
+
+			{#if !data.optionsTradingEnabled}
+				<Alert class="rounded-none shadow-none">
+					<CircleAlertIcon aria-hidden="true" />
+					<AlertTitle>Options chain is view-only</AlertTitle>
+					<AlertDescription>{data.optionsTradingReason}</AlertDescription>
+				</Alert>
+			{/if}
 
 			{#if data.options.error}
 				<Alert variant="destructive" class="rounded-none shadow-none">
@@ -546,212 +584,218 @@
 						rows={data.options.rows}
 						expirationLabel={data.options.expiration ?? 'No expiration'}
 						selectedContractIds={optionLegs.map((leg) => leg.contract.id)}
-						onSelect={toggleContract}
+						onSelect={data.optionsTradingEnabled ? toggleContract : undefined}
 					/>
 				</div>
 			{/if}
 
-			<section class="border border-border" aria-labelledby="strategy-ticket-heading">
-				<header class="border-b border-border px-4 py-3">
-					<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Strategy</p>
-					<h2 id="strategy-ticket-heading" class="mt-1 font-semibold">Selected option legs</h2>
-				</header>
-				{#if optionLegs.length === 0}
-					<div class="p-4">
-						<EmptyState
-							title="Add contracts from the chain"
-							description="Choose calls or puts, then set each leg’s side, position effect, and ratio."
-							icon={LayersIcon}
-							compact
-						/>
-					</div>
-				{:else}
-					<div class="divide-y divide-border">
-						{#each optionLegs as leg, index (leg.contract.id)}
-							<div
-								class="grid gap-3 p-4 md:grid-cols-[minmax(14rem,1fr)_10rem_10rem_7rem_auto] md:items-end"
-							>
-								<div class="min-w-0">
-									<p class="truncate font-medium">{leg.contract.symbol}</p>
-									<p class="text-xs text-muted-foreground">
-										{leg.contract.type} · {money.format(leg.contract.strike)} strike
-									</p>
-								</div>
-								<div>
-									<Label for={`option-side-${index}`}>Side</Label>
-									<select
-										id={`option-side-${index}`}
-										value={leg.side}
-										onchange={(event) =>
-											updateOptionLeg(index, {
-												side: event.currentTarget.value as 'buy' | 'sell'
-											})}
-										class="mt-2 h-10 w-full rounded-none border border-input bg-background px-2 text-sm"
-									>
-										<option value="buy">Buy</option><option value="sell">Sell</option>
-									</select>
-								</div>
-								<div>
-									<Label for={`option-effect-${index}`}>Effect</Label>
-									<select
-										id={`option-effect-${index}`}
-										value={leg.positionEffect}
-										onchange={(event) =>
-											updateOptionLeg(index, {
-												positionEffect: event.currentTarget.value as 'open' | 'close'
-											})}
-										class="mt-2 h-10 w-full rounded-none border border-input bg-background px-2 text-sm"
-									>
-										<option value="open">Open</option><option value="close">Close</option>
-									</select>
-								</div>
-								<div>
-									<Label for={`option-ratio-${index}`}>Ratio</Label>
-									<Input
-										id={`option-ratio-${index}`}
-										type="number"
-										min="1"
-										max="100"
-										value={leg.ratioQuantity}
-										oninput={(event) =>
-											updateOptionLeg(index, { ratioQuantity: Number(event.currentTarget.value) })}
-										class="mt-2 h-10 rounded-none shadow-none"
-									/>
-								</div>
-								<Button
-									type="button"
-									variant="ghost"
-									class="h-10 rounded-none text-destructive shadow-none"
-									onclick={() => toggleContract(leg.contract)}>Remove</Button
-								>
-							</div>
-						{/each}
-					</div>
-
-					<div class="grid gap-4 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-5">
-						<div>
-							<Label for="option-quantity">Strategies</Label>
-							<Input
-								id="option-quantity"
-								type="number"
-								min="1"
-								step="1"
-								inputmode="numeric"
-								value={optionQuantity}
-								oninput={(event) => {
-									optionQuantity = event.currentTarget.value;
-									resetReview();
-								}}
-								class="mt-2 h-11 rounded-none"
+			{#if data.optionsTradingEnabled}
+				<section class="border border-border" aria-labelledby="strategy-ticket-heading">
+					<header class="border-b border-border px-4 py-3">
+						<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+							Strategy
+						</p>
+						<h2 id="strategy-ticket-heading" class="mt-1 font-semibold">Selected option legs</h2>
+					</header>
+					{#if optionLegs.length === 0}
+						<div class="p-4">
+							<EmptyState
+								title="Add contracts from the chain"
+								description="Choose calls or puts, then set each leg’s side, position effect, and ratio."
+								icon={LayersIcon}
+								compact
 							/>
 						</div>
-						<div>
-							<Label for="option-order-type">Order type</Label>
-							<select
-								id="option-order-type"
-								value={optionOrderType}
-								onchange={(event) => {
-									optionOrderType = event.currentTarget.value as 'market' | 'limit';
-									if (optionOrderType === 'market' && optionTimeInForce === 'gtc') {
-										optionTimeInForce = 'day';
-									}
-									resetReview();
-								}}
-								class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
-							>
-								<option value="limit">Net limit</option><option value="market">Market</option>
-							</select>
+					{:else}
+						<div class="divide-y divide-border">
+							{#each optionLegs as leg, index (leg.contract.id)}
+								<div
+									class="grid gap-3 p-4 md:grid-cols-[minmax(14rem,1fr)_10rem_10rem_7rem_auto] md:items-end"
+								>
+									<div class="min-w-0">
+										<p class="truncate font-medium">{leg.contract.symbol}</p>
+										<p class="text-xs text-muted-foreground">
+											{leg.contract.type} · {money.format(leg.contract.strike)} strike
+										</p>
+									</div>
+									<div>
+										<Label for={`option-side-${index}`}>Side</Label>
+										<select
+											id={`option-side-${index}`}
+											value={leg.side}
+											onchange={(event) =>
+												updateOptionLeg(index, {
+													side: event.currentTarget.value as 'buy' | 'sell'
+												})}
+											class="mt-2 h-10 w-full rounded-none border border-input bg-background px-2 text-sm"
+										>
+											<option value="buy">Buy</option><option value="sell">Sell</option>
+										</select>
+									</div>
+									<div>
+										<Label for={`option-effect-${index}`}>Effect</Label>
+										<select
+											id={`option-effect-${index}`}
+											value={leg.positionEffect}
+											onchange={(event) =>
+												updateOptionLeg(index, {
+													positionEffect: event.currentTarget.value as 'open' | 'close'
+												})}
+											class="mt-2 h-10 w-full rounded-none border border-input bg-background px-2 text-sm"
+										>
+											<option value="open">Open</option><option value="close">Close</option>
+										</select>
+									</div>
+									<div>
+										<Label for={`option-ratio-${index}`}>Ratio</Label>
+										<Input
+											id={`option-ratio-${index}`}
+											type="number"
+											min="1"
+											max="100"
+											value={leg.ratioQuantity}
+											oninput={(event) =>
+												updateOptionLeg(index, {
+													ratioQuantity: Number(event.currentTarget.value)
+												})}
+											class="mt-2 h-10 rounded-none shadow-none"
+										/>
+									</div>
+									<Button
+										type="button"
+										variant="ghost"
+										class="h-10 rounded-none text-destructive shadow-none"
+										onclick={() => toggleContract(leg.contract)}>Remove</Button
+									>
+								</div>
+							{/each}
 						</div>
-						{#if optionOrderType === 'limit'}
+
+						<div class="grid gap-4 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-5">
 							<div>
-								<Label for="option-limit">Net price</Label>
+								<Label for="option-quantity">Strategies</Label>
 								<Input
-									id="option-limit"
+									id="option-quantity"
 									type="number"
-									min="0.01"
-									step="0.01"
-									inputmode="decimal"
-									value={optionLimitPrice}
+									min="1"
+									step="1"
+									inputmode="numeric"
+									value={optionQuantity}
 									oninput={(event) => {
-										optionLimitPrice = event.currentTarget.value;
+										optionQuantity = event.currentTarget.value;
 										resetReview();
 									}}
 									class="mt-2 h-11 rounded-none"
 								/>
 							</div>
 							<div>
-								<Label for="option-effect">Net effect</Label>
+								<Label for="option-order-type">Order type</Label>
 								<select
-									id="option-effect"
-									value={optionNetEffect}
+									id="option-order-type"
+									value={optionOrderType}
 									onchange={(event) => {
-										optionNetEffect = event.currentTarget.value as 'debit' | 'credit';
+										optionOrderType = event.currentTarget.value as 'market' | 'limit';
+										if (optionOrderType === 'market' && optionTimeInForce === 'gtc') {
+											optionTimeInForce = 'day';
+										}
 										resetReview();
 									}}
 									class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
 								>
-									<option value="debit">Debit</option><option value="credit">Credit</option>
+									<option value="limit">Net limit</option><option value="market">Market</option>
 								</select>
 							</div>
-						{/if}
-						<div>
-							<Label for="option-tif">Time in force</Label>
-							<select
-								id="option-tif"
-								value={optionTimeInForce}
-								onchange={(event) => {
-									optionTimeInForce = event.currentTarget.value as 'day' | 'gtc' | 'ioc';
-									resetReview();
-								}}
-								class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
-							>
-								<option value="day">Day</option>
-								{#if optionOrderType === 'limit'}<option value="gtc">GTC</option>{/if}
-								<option value="ioc">IOC</option>
-							</select>
-						</div>
-					</div>
-
-					<div class="grid gap-4 border-t border-border p-4 lg:grid-cols-[1fr_auto] lg:items-end">
-						<div>
-							{#if preview}
-								<p class="text-sm font-medium">
-									{preview.accepted ? 'Risk checks passed' : 'Order blocked'} · Cash required
-									{money.format(Number(preview.cashRequired))}
-								</p>
-								{#each preview.violations as violation (`${violation.code}-${violation.symbol ?? ''}`)}
-									<p
-										class={violation.severity === 'blocked'
-											? 'text-sm text-destructive'
-											: 'text-sm text-warning'}
+							{#if optionOrderType === 'limit'}
+								<div>
+									<Label for="option-limit">Net price</Label>
+									<Input
+										id="option-limit"
+										type="number"
+										min="0.01"
+										step="0.01"
+										inputmode="decimal"
+										value={optionLimitPrice}
+										oninput={(event) => {
+											optionLimitPrice = event.currentTarget.value;
+											resetReview();
+										}}
+										class="mt-2 h-11 rounded-none"
+									/>
+								</div>
+								<div>
+									<Label for="option-effect">Net effect</Label>
+									<select
+										id="option-effect"
+										value={optionNetEffect}
+										onchange={(event) => {
+											optionNetEffect = event.currentTarget.value as 'debit' | 'credit';
+											resetReview();
+										}}
+										class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
 									>
-										{violation.message}
-									</p>
-								{/each}
-							{:else}
-								<p class="text-sm text-muted-foreground">
-									Preview uses current leg quotes, collateral, buying power, and permissions.
-								</p>
+										<option value="debit">Debit</option><option value="credit">Credit</option>
+									</select>
+								</div>
 							{/if}
+							<div>
+								<Label for="option-tif">Time in force</Label>
+								<select
+									id="option-tif"
+									value={optionTimeInForce}
+									onchange={(event) => {
+										optionTimeInForce = event.currentTarget.value as 'day' | 'gtc' | 'ioc';
+										resetReview();
+									}}
+									class="mt-2 h-11 w-full rounded-none border border-input bg-background px-3 text-sm"
+								>
+									<option value="day">Day</option>
+									{#if optionOrderType === 'limit'}<option value="gtc">GTC</option>{/if}
+									<option value="ioc">IOC</option>
+								</select>
+							</div>
 						</div>
-						<div class="flex flex-wrap gap-2">
-							<Button
-								type="button"
-								variant="outline"
-								class="h-11 rounded-none shadow-none"
-								disabled={reviewing || Boolean(receipt)}
-								onclick={requestPreview}>{reviewing ? 'Reviewing…' : 'Review strategy'}</Button
-							>
-							<Button
-								type="button"
-								class="h-11 rounded-none shadow-none"
-								disabled={!canPlace || placing || Boolean(receipt)}
-								onclick={placeOrder}>{placing ? 'Submitting…' : 'Place simulated order'}</Button
-							>
+
+						<div class="grid gap-4 border-t border-border p-4 lg:grid-cols-[1fr_auto] lg:items-end">
+							<div>
+								{#if preview}
+									<p class="text-sm font-medium">
+										{preview.accepted ? 'Risk checks passed' : 'Order blocked'} · Cash required
+										{money.format(Number(preview.cashRequired))}
+									</p>
+									{#each preview.violations as violation (`${violation.code}-${violation.symbol ?? ''}`)}
+										<p
+											class={violation.severity === 'blocked'
+												? 'text-sm text-destructive'
+												: 'text-sm text-warning'}
+										>
+											{violation.message}
+										</p>
+									{/each}
+								{:else}
+									<p class="text-sm text-muted-foreground">
+										Preview uses current leg quotes, collateral, buying power, and permissions.
+									</p>
+								{/if}
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									class="h-11 rounded-none shadow-none"
+									disabled={reviewing || Boolean(receipt)}
+									onclick={requestPreview}>{reviewing ? 'Reviewing…' : 'Review strategy'}</Button
+								>
+								<Button
+									type="button"
+									class="h-11 rounded-none shadow-none"
+									disabled={!canPlace || placing || Boolean(receipt)}
+									onclick={placeOrder}>{placing ? 'Submitting…' : 'Place simulated order'}</Button
+								>
+							</div>
 						</div>
-					</div>
-				{/if}
-			</section>
+					{/if}
+				</section>
+			{/if}
 		</div>
 	{:else if data.requestedSymbol && !data.symbolValid}
 		<EmptyState

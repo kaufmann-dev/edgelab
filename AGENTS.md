@@ -48,9 +48,10 @@ RUN_DATABASE_INTEGRATION=true pnpm test:unit -- src/lib/server/trading/drizzle-r
 - Model a multi-leg strategy as one order and one parent fill with fill legs. Keep ledger entries
   linked to the parent fill, cap orders at four legs, fill strategies atomically, and never enable
   naked options.
-- Reject market-data mode mismatches and stale or unavailable quotes. Never conceal an entitlement
-  failure by silently downgrading the feed. New portfolios require matching Massive `advanced`
-  stock and option plans and persist the real-time clock only.
+- Reject market-data mode mismatches and stale or unavailable market events. Never conceal an
+  entitlement failure by silently downgrading the feed or representing a bar as a quote. New
+  portfolios require Massive Stocks Starter or better and persist the Stocks plan's clock. The
+  Options plan is optional; option execution requires a same-clock quote-and-trade feed.
 - Preserve OIDC authorization code flow with PKCE S256, state, nonce, `client_secret_post`, opaque
   local sessions, encrypted flow data, bounded login-flow creation, and POST logout. Keep browser
   market streams authenticated, bounded, and short-lived enough to recheck session validity.

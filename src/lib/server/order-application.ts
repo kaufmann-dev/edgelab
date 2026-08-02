@@ -2,8 +2,15 @@ import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { tradingJournalEntries } from '$lib/server/db/schema/trading';
+import { loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
 import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
-import type { Instrument, NormalizedQuote } from '$lib/server/market-data';
+import {
+	supportsOptionsExecution,
+	supportsStockSimulation,
+	type Instrument,
+	type NormalizedBar,
+	type NormalizedQuote
+} from '$lib/server/market-data';
 import {
 	getMassiveMarketHolidays,
 	logicalMarketTime,
@@ -14,7 +21,7 @@ import { notifyOrdersChanged } from '$lib/server/live-order-execution';
 import {
 	getPortfolioPolicy,
 	listPortfolioEquity,
-	portfolioExistsForOwner
+	requirePortfolioReadAccess
 } from '$lib/server/portfolio-read';
 import {
 	acceptedOrderMatchesDraft,
@@ -82,6 +89,48 @@ function symbolsForPositions(instruments: ReadonlyMap<string, Instrument>): stri
 	];
 }
 
+function assertedAssetClass(symbol: string): 'stocks' | 'options' {
+	return symbol.startsWith('O:') ? 'options' : 'stocks';
+}
+
+function assertExecutableMarketAccess(draft: OrderDraft, dataMode: 'realtime' | 'delayed'): void {
+	const capabilities = getMarketEnvironment().capabilities;
+	const assetClasses = new Set(draft.legs.map((leg) => assertedAssetClass(leg.symbol)));
+	for (const assetClass of assetClasses) {
+		const capability = capabilities[assetClass];
+		if (capability.executionMode !== dataMode) {
+			throw new OrderApplicationError(
+				`${assetClass === 'stocks' ? 'Stock' : 'Option'} market data does not match this portfolio's ${dataMode} clock.`,
+				422
+			);
+		}
+		const executable =
+			assetClass === 'stocks'
+				? supportsStockSimulation(capability)
+				: supportsOptionsExecution(capabilities);
+		if (!executable) {
+			throw new OrderApplicationError(
+				assetClass === 'stocks'
+					? 'Stock simulation requires Massive snapshots, WebSockets, and second aggregates. Stocks Starter or better provides these capabilities.'
+					: 'Option trading is disabled because the configured option plan does not provide the quote and trade feeds required by the execution model.',
+				422
+			);
+		}
+	}
+	if (assetClasses.has('stocks') && draft.timeInForce === 'ioc') {
+		throw new OrderApplicationError(
+			'Immediate-or-cancel is unavailable for aggregate-priced stock orders. Use DAY or GTC.',
+			422
+		);
+	}
+	if (assetClasses.has('stocks') && draft.type === 'trailing_stop') {
+		throw new OrderApplicationError(
+			'Trailing-stop orders are unavailable for aggregate-priced stocks. Use a stop or stop-limit order.',
+			422
+		);
+	}
+}
+
 async function resolveInstruments(draft: OrderDraft): Promise<Map<string, Instrument>> {
 	const provider = getMarketDataProvider();
 	const instruments = new Map<string, Instrument>();
@@ -103,11 +152,63 @@ async function resolveInstruments(draft: OrderDraft): Promise<Map<string, Instru
 	return instruments;
 }
 
-async function loadQuotes(symbols: string[]): Promise<Map<string, NormalizedQuote>> {
-	const page = await getMarketDataProvider().getUnifiedSnapshots(symbols);
-	return new Map(
-		page.items.flatMap((snapshot) => (snapshot.quote ? [[snapshot.symbol, snapshot.quote]] : []))
+async function loadMarketMarks(input: {
+	draft: OrderDraft;
+	instruments: ReadonlyMap<string, Instrument>;
+	at: Date;
+}): Promise<{
+	quotes: Map<string, NormalizedQuote>;
+	bars: Map<string, NormalizedBar>;
+}> {
+	const provider = getMarketDataProvider();
+	const environment = getMarketEnvironment();
+	const singleLegPriceOrder =
+		input.draft.legs.length === 1 && ['limit', 'stop_limit'].includes(input.draft.type);
+	const referenceInstruments = singleLegPriceOrder ? [] : [...input.instruments.values()];
+	const optionSymbols = referenceInstruments
+		.filter((instrument) => instrument.assetClass === 'options')
+		.map((instrument) => instrument.symbol);
+	const stockInstruments = referenceInstruments.filter(
+		(instrument) => instrument.assetClass === 'stocks'
 	);
+	const stockBarsPromise = (async () => {
+		if (stockInstruments.length === 0) return [];
+		const executionMode = environment.capabilities.stocks.executionMode;
+		const delayMinutes = environment.capabilities.stocks.delayMinutes;
+		if (!executionMode || delayMinutes === null) {
+			throw new OrderApplicationError(
+				'Stock aggregate pricing has no executable market-data clock.',
+				503
+			);
+		}
+		return Promise.all(
+			stockInstruments.map(async (instrument) => ({
+				symbol: instrument.symbol,
+				bar: await loadLatestCompletedMinuteBar({
+					provider,
+					assetClass: 'stocks',
+					symbol: instrument.symbol,
+					mode: executionMode,
+					delayMinutes,
+					at: input.at
+				})
+			}))
+		);
+	})();
+	const [optionSnapshots, stockBars] = await Promise.all([
+		optionSymbols.length > 0
+			? provider.getUnifiedSnapshots(optionSymbols)
+			: Promise.resolve({ items: [] }),
+		stockBarsPromise
+	]);
+	return {
+		quotes: new Map(
+			optionSnapshots.items.flatMap((snapshot) =>
+				snapshot.quote ? [[snapshot.symbol, snapshot.quote]] : []
+			)
+		),
+		bars: new Map(stockBars.flatMap(({ symbol, bar }) => (bar ? [[symbol, bar]] : [])))
+	};
 }
 
 function quoteContextForOrder(input: {
@@ -119,9 +220,15 @@ function quoteContextForOrder(input: {
 	const delays = new Set<number>();
 	for (const instrument of input.instruments.values()) {
 		const capability = capabilities[instrument.assetClass];
-		if (capability.mode !== input.expectedMode) {
+		if (capability.executionMode !== input.expectedMode) {
 			throw new OrderApplicationError(
 				`${instrument.assetClass} ${input.expectedMode} data is unavailable with the configured Massive plan.`,
+				503
+			);
+		}
+		if (capability.delayMinutes === null) {
+			throw new OrderApplicationError(
+				`${instrument.assetClass} has no executable market-data delay.`,
 				503
 			);
 		}
@@ -397,6 +504,7 @@ async function evaluateInsideTransaction(input: {
 	draft: OrderDraft;
 	instruments: ReadonlyMap<string, Instrument>;
 	quotes: ReadonlyMap<string, NormalizedQuote>;
+	bars: ReadonlyMap<string, NormalizedBar>;
 	quoteAttemptAt: Date;
 	lockedPortfolio?: NonNullable<Awaited<ReturnType<TradingUnitOfWork['getPortfolioForUpdate']>>>;
 }): Promise<{
@@ -405,7 +513,7 @@ async function evaluateInsideTransaction(input: {
 	preview: ApplicationOrderPreview;
 	quoteContext: ExecutableQuoteContext;
 }> {
-	const { uow, ownerUserId, draft, instruments, quotes } = input;
+	const { uow, ownerUserId, draft, instruments, quotes, bars } = input;
 	const portfolio =
 		input.lockedPortfolio ?? (await uow.getPortfolioForUpdate(draft.portfolioId, ownerUserId));
 	if (!portfolio || portfolio.status !== 'active') {
@@ -446,6 +554,7 @@ async function evaluateInsideTransaction(input: {
 		draft,
 		instruments,
 		quotes,
+		bars,
 		account,
 		executionModel: SIMULATION_EXECUTION_MODEL,
 		quoteContext,
@@ -458,11 +567,14 @@ async function evaluateInsideTransaction(input: {
 	violations.push(
 		...(await addPolicyViolations({ draft, instruments, portfolio, preview: core, policy }))
 	);
-	const quoteModes = new Set(quotes.values().map((quote) => quote.mode));
-	if (quoteModes.size > 0 && [...quoteModes].some((mode) => mode !== portfolio.dataMode)) {
+	const marketModes = new Set([
+		...quotes.values().map((quote) => quote.mode),
+		...bars.values().map((bar) => bar.mode)
+	]);
+	if (marketModes.size > 0 && [...marketModes].some((mode) => mode !== portfolio.dataMode)) {
 		violations.push({
 			code: 'data_mode_mismatch',
-			message: `This portfolio requires ${portfolio.dataMode} data, but the provider returned ${[...quoteModes].join('/')}.`,
+			message: `This portfolio requires ${portfolio.dataMode} data, but the provider returned ${[...marketModes].join('/')}.`,
 			severity: 'blocked'
 		});
 	}
@@ -479,11 +591,14 @@ export async function previewSimulationOrder(input: {
 	draft: unknown;
 }): Promise<ApplicationOrderPreview> {
 	const draft = orderDraftSchema.parse(input.draft);
-	if (!(await portfolioExistsForOwner(input.ownerUserId, draft.portfolioId))) {
+	const portfolio = await requirePortfolioReadAccess(input.ownerUserId, draft.portfolioId);
+	if (!portfolio) {
 		throw new OrderApplicationError('Portfolio not found.', 404);
 	}
+	assertExecutableMarketAccess(draft, portfolio.dataMode);
 	const instruments = await resolveInstruments(draft);
-	const quotes = await loadQuotes(draft.legs.map((leg) => leg.symbol));
+	const marketRequestAt = new Date();
+	const { quotes, bars } = await loadMarketMarks({ draft, instruments, at: marketRequestAt });
 	const quoteAttemptAt = new Date();
 	return drizzleTradingRepository.transaction(draft.portfolioId, async (uow) => {
 		const result = await evaluateInsideTransaction({
@@ -492,6 +607,7 @@ export async function previewSimulationOrder(input: {
 			draft,
 			instruments,
 			quotes,
+			bars,
 			quoteAttemptAt
 		});
 		return result.preview;
@@ -503,35 +619,45 @@ export async function placeSimulationOrder(input: {
 	draft: unknown;
 }): Promise<PlaceOrderResult> {
 	const draft = orderDraftSchema.parse(input.draft);
-	const existingBeforeMarketData = await drizzleTradingRepository.transaction(
+	const beforeMarketData = await drizzleTradingRepository.transaction(
 		draft.portfolioId,
 		async (uow) => {
 			const portfolio = await uow.getPortfolioForUpdate(draft.portfolioId, input.ownerUserId);
 			if (!portfolio || portfolio.status !== 'active') {
 				throw new OrderApplicationError('Portfolio not found.', 404);
 			}
-			return uow.findOrderByClientId(draft.portfolioId, draft.clientOrderId);
+			return {
+				portfolio,
+				existing: await uow.findOrderByClientId(draft.portfolioId, draft.clientOrderId)
+			};
 		}
 	);
-	if (existingBeforeMarketData) {
-		if (!acceptedOrderMatchesDraft(existingBeforeMarketData, draft)) {
+	if (beforeMarketData.existing) {
+		if (!acceptedOrderMatchesDraft(beforeMarketData.existing, draft)) {
 			throw new OrderApplicationError(
 				'Client order ID is already used for a different order.',
 				409
 			);
 		}
-		return { order: existingBeforeMarketData, preview: null, idempotent: true };
+		return { order: beforeMarketData.existing, preview: null, idempotent: true };
 	}
+	assertExecutableMarketAccess(draft, beforeMarketData.portfolio.dataMode);
 	const acceptedAt = new Date();
 	const instruments = await resolveInstruments(draft);
-	const quotes = await loadQuotes(draft.legs.map((leg) => leg.symbol));
+	const marketRequestAt = new Date();
+	const { quotes, bars } = await loadMarketMarks({ draft, instruments, at: marketRequestAt });
 	const quoteAttemptAt = new Date();
-	const holidays = await getMassiveMarketHolidays(quoteAttemptAt).catch((error: unknown) => {
-		throw new OrderApplicationError(
-			`The market calendar is unavailable: ${error instanceof Error ? error.message : 'unknown provider error'}`,
-			503
-		);
-	});
+	const quoteExecutable = [...instruments.values()].every(
+		(instrument) => instrument.assetClass === 'options'
+	);
+	const holidays = quoteExecutable
+		? await getMassiveMarketHolidays(quoteAttemptAt).catch((error: unknown) => {
+				throw new OrderApplicationError(
+					`The market calendar is unavailable: ${error instanceof Error ? error.message : 'unknown provider error'}`,
+					503
+				);
+			})
+		: [];
 
 	const result = await drizzleTradingRepository.transaction(draft.portfolioId, async (uow) => {
 		const lockedPortfolio = await uow.getPortfolioForUpdate(draft.portfolioId, input.ownerUserId);
@@ -554,6 +680,7 @@ export async function placeSimulationOrder(input: {
 			draft,
 			instruments,
 			quotes,
+			bars,
 			quoteAttemptAt,
 			lockedPortfolio
 		});
@@ -587,21 +714,23 @@ export async function placeSimulationOrder(input: {
 			shareQuantities: evaluated.preview.core.shareCollateral
 		});
 
-		const fill = orderCanExecuteInCurrentSession({
-			draft,
-			instruments,
-			quotes,
-			quoteContext: evaluated.quoteContext,
-			holidays
-		})
-			? calculateQuoteFill({
-					order,
-					quotes,
-					executionModel: SIMULATION_EXECUTION_MODEL,
-					quoteContext: evaluated.quoteContext,
-					feeModel: SIMULATION_FEE_MODEL
-				})
-			: undefined;
+		const fill =
+			quoteExecutable &&
+			orderCanExecuteInCurrentSession({
+				draft,
+				instruments,
+				quotes,
+				quoteContext: evaluated.quoteContext,
+				holidays
+			})
+				? calculateQuoteFill({
+						order,
+						quotes,
+						executionModel: SIMULATION_EXECUTION_MODEL,
+						quoteContext: evaluated.quoteContext,
+						feeModel: SIMULATION_FEE_MODEL
+					})
+				: undefined;
 		if (fill) {
 			const remainingQuantityBeforeFill = order.quantity.minus(order.filledQuantity);
 			const fillId = crypto.randomUUID();

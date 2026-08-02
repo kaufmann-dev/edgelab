@@ -81,7 +81,7 @@ export async function createOwnedPortfolio(
 				name: input.name,
 				baseCurrency: 'USD',
 				startingCash: String(input.startingCapital),
-				dataMode: 'realtime',
+				dataMode: input.dataMode,
 				executionModelVersion: DEFAULT_EXECUTION_MODEL_VERSION,
 				riskModelVersion: DEFAULT_RISK_MODEL_VERSION,
 				status: 'active',

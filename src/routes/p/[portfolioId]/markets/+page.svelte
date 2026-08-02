@@ -203,16 +203,27 @@
 			</div>
 		{:else}
 			<div class="hidden overflow-x-auto md:block">
-				<table class="w-full min-w-[62rem] border-collapse text-left text-sm">
+				<table
+					class={[
+						'w-full border-collapse text-left text-sm',
+						data.feed?.quotes ? 'min-w-[62rem]' : 'min-w-[50rem]'
+					]}
+				>
 					<caption class="sr-only">
 						Saved stock symbols, Massive snapshots, and portfolio actions
 					</caption>
 					<thead class="bg-muted/40 text-xs text-muted-foreground uppercase">
 						<tr>
 							<th scope="col" class="px-4 py-3 font-medium">Instrument</th>
-							<th scope="col" class="px-4 py-3 font-medium">Bid / ask</th>
-							<th scope="col" class="px-4 py-3 font-medium">Last</th>
-							<th scope="col" class="px-4 py-3 font-medium">Snapshot</th>
+							{#if data.feed?.quotes}
+								<th scope="col" class="px-4 py-3 font-medium">Bid / ask</th>
+							{/if}
+							<th scope="col" class="px-4 py-3 font-medium">
+								{data.feed?.quotes ? 'Last' : 'Minute close'}
+							</th>
+							<th scope="col" class="px-4 py-3 font-medium">
+								{data.feed?.quotes ? 'Snapshot' : 'Aggregate update'}
+							</th>
 							<th scope="col" class="px-4 py-3 text-right font-medium">Actions</th>
 						</tr>
 					</thead>
@@ -236,31 +247,50 @@
 									</p>
 								</th>
 								{#if item.snapshot.status === 'available'}
-									<td class="px-4 py-4 align-top tabular-nums">
-										{#if item.snapshot.data.quote}
-											<span aria-label={`Bid ${formatMoney(item.snapshot.data.quote.bidPrice)}`}>
-												{formatMoney(item.snapshot.data.quote.bidPrice)}
-											</span>
-											<span class="text-muted-foreground" aria-hidden="true"> / </span>
-											<span aria-label={`Ask ${formatMoney(item.snapshot.data.quote.askPrice)}`}>
-												{formatMoney(item.snapshot.data.quote.askPrice)}
-											</span>
-										{:else}
-											<span class="text-muted-foreground">Not reported</span>
-										{/if}
-									</td>
+									{#if data.feed?.quotes}
+										<td class="px-4 py-4 align-top tabular-nums">
+											{#if item.snapshot.data.quote}
+												<span aria-label={`Bid ${formatMoney(item.snapshot.data.quote.bidPrice)}`}>
+													{formatMoney(item.snapshot.data.quote.bidPrice)}
+												</span>
+												<span class="text-muted-foreground" aria-hidden="true"> / </span>
+												<span aria-label={`Ask ${formatMoney(item.snapshot.data.quote.askPrice)}`}>
+													{formatMoney(item.snapshot.data.quote.askPrice)}
+												</span>
+											{:else}
+												<span class="text-muted-foreground">Not reported</span>
+											{/if}
+										</td>
+									{/if}
 									<td class="px-4 py-4 align-top font-medium tabular-nums">
 										{formatMoney(
-											item.snapshot.data.lastTrade?.price ?? item.snapshot.data.lastMinute?.close
+											data.feed?.quotes
+												? (item.snapshot.data.lastTrade?.price ??
+														item.snapshot.data.lastMinute?.close)
+												: item.snapshot.data.lastMinute?.close
 										)}
 									</td>
 									<td class="px-4 py-4 align-top">
-										<time datetime={item.snapshot.data.asOf} class="text-xs text-muted-foreground">
-											{retrievedAtLabel(item.snapshot.data.asOf)}
-										</time>
+										{#if data.feed?.quotes}
+											<time
+												datetime={item.snapshot.data.asOf}
+												class="text-xs text-muted-foreground"
+											>
+												{retrievedAtLabel(item.snapshot.data.asOf)}
+											</time>
+										{:else if item.snapshot.data.lastMinute}
+											<time
+												datetime={item.snapshot.data.lastMinute.sourceTime}
+												class="text-xs text-muted-foreground"
+											>
+												{retrievedAtLabel(item.snapshot.data.lastMinute.sourceTime)}
+											</time>
+										{:else}
+											<span class="text-xs text-muted-foreground">Not reported</span>
+										{/if}
 									</td>
 								{:else}
-									<td colspan="3" class="px-4 py-4 align-top">
+									<td colspan={data.feed?.quotes ? 3 : 2} class="px-4 py-4 align-top">
 										<div class="flex max-w-xl items-start gap-2 text-xs text-muted-foreground">
 											<CircleAlertIcon class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 											<span>{item.snapshot.reason}</span>
@@ -318,32 +348,49 @@
 
 						{#if item.snapshot.status === 'available'}
 							<dl class="grid grid-cols-2 gap-3 border-y border-border py-3 text-sm">
+								{#if data.feed?.quotes}
+									<div>
+										<dt class="text-xs text-muted-foreground">Bid</dt>
+										<dd class="mt-1 font-medium tabular-nums">
+											{formatMoney(item.snapshot.data.quote?.bidPrice)}
+										</dd>
+									</div>
+									<div>
+										<dt class="text-xs text-muted-foreground">Ask</dt>
+										<dd class="mt-1 font-medium tabular-nums">
+											{formatMoney(item.snapshot.data.quote?.askPrice)}
+										</dd>
+									</div>
+								{/if}
 								<div>
-									<dt class="text-xs text-muted-foreground">Bid</dt>
-									<dd class="mt-1 font-medium tabular-nums">
-										{formatMoney(item.snapshot.data.quote?.bidPrice)}
-									</dd>
-								</div>
-								<div>
-									<dt class="text-xs text-muted-foreground">Ask</dt>
-									<dd class="mt-1 font-medium tabular-nums">
-										{formatMoney(item.snapshot.data.quote?.askPrice)}
-									</dd>
-								</div>
-								<div>
-									<dt class="text-xs text-muted-foreground">Last</dt>
+									<dt class="text-xs text-muted-foreground">
+										{data.feed?.quotes ? 'Last' : 'Minute close'}
+									</dt>
 									<dd class="mt-1 font-medium tabular-nums">
 										{formatMoney(
-											item.snapshot.data.lastTrade?.price ?? item.snapshot.data.lastMinute?.close
+											data.feed?.quotes
+												? (item.snapshot.data.lastTrade?.price ??
+														item.snapshot.data.lastMinute?.close)
+												: item.snapshot.data.lastMinute?.close
 										)}
 									</dd>
 								</div>
 								<div>
-									<dt class="text-xs text-muted-foreground">Snapshot</dt>
+									<dt class="text-xs text-muted-foreground">
+										{data.feed?.quotes ? 'Snapshot' : 'Aggregate update'}
+									</dt>
 									<dd class="mt-1 text-xs">
-										<time datetime={item.snapshot.data.asOf}>
-											{retrievedAtLabel(item.snapshot.data.asOf)}
-										</time>
+										{#if data.feed?.quotes}
+											<time datetime={item.snapshot.data.asOf}>
+												{retrievedAtLabel(item.snapshot.data.asOf)}
+											</time>
+										{:else if item.snapshot.data.lastMinute}
+											<time datetime={item.snapshot.data.lastMinute.sourceTime}>
+												{retrievedAtLabel(item.snapshot.data.lastMinute.sourceTime)}
+											</time>
+										{:else}
+											Not reported
+										{/if}
 									</dd>
 								</div>
 							</dl>
@@ -517,10 +564,10 @@
 					</div>
 					{#if data.feed}
 						<Badge
-							variant={data.feed.mode === 'realtime' ? 'default' : 'outline'}
+							variant={data.feed.executionMode === 'realtime' ? 'default' : 'outline'}
 							class="rounded-none"
 						>
-							{#if data.feed.mode === 'realtime'}
+							{#if data.feed.executionMode === 'realtime'}
 								<RadioTowerIcon aria-hidden="true" />
 							{:else}
 								<Clock3Icon aria-hidden="true" />
@@ -534,13 +581,19 @@
 			{#if data.feed}
 				<div class="space-y-4 px-4 py-4">
 					<p class="text-sm text-muted-foreground">
-						{#if data.feed.mode === 'realtime'}
+						{#if data.feed.executionMode === 'realtime'}
 							The configured stock plan supports real-time data. Each quote still carries its own
 							provider timestamp.
-						{:else if data.feed.mode === 'delayed'}
+						{:else if data.feed.executionMode === 'delayed'}
 							Stock prices are delayed by {data.feed.delayMinutes} minutes under the configured plan.
 						{/if}
 					</p>
+					{#if !data.feed.quotes && (data.feed.minuteBars || data.feed.secondBars)}
+						<p class="text-sm text-muted-foreground">
+							Aggregate bars power simulated stock pricing when raw quotes and trades are not
+							included in the plan.
+						</p>
+					{/if}
 
 					<dl class="divide-y divide-border border border-border text-sm">
 						<div class="flex items-center justify-between gap-4 px-3 py-2.5">
@@ -550,6 +603,14 @@
 						<div class="flex items-center justify-between gap-4 px-3 py-2.5">
 							<dt>WebSocket transport</dt>
 							<dd class="font-medium">{data.feed.websocket ? 'Available' : 'Unavailable'}</dd>
+						</div>
+						<div class="flex items-center justify-between gap-4 px-3 py-2.5">
+							<dt>Minute aggregates</dt>
+							<dd class="font-medium">{data.feed.minuteBars ? 'Available' : 'Unavailable'}</dd>
+						</div>
+						<div class="flex items-center justify-between gap-4 px-3 py-2.5">
+							<dt>Second aggregates</dt>
+							<dd class="font-medium">{data.feed.secondBars ? 'Available' : 'Unavailable'}</dd>
 						</div>
 						<div class="flex items-center justify-between gap-4 px-3 py-2.5">
 							<dt>Trade events</dt>
@@ -569,8 +630,8 @@
 								<time datetime={data.retrievedAt}>{retrievedAtLabel(data.retrievedAt)}</time>. They
 								do not contain a current price.
 							{:else}
-								No reference search has been retrieved yet. Quote freshness appears only with a
-								provider-backed quote.
+								No reference search has been retrieved yet. Price freshness appears only with
+								provider-backed market data.
 							{/if}
 						</p>
 					</div>

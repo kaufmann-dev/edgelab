@@ -9,7 +9,7 @@ import {
 } from './live-order-execution';
 
 describe('live order topic planning', () => {
-	it('deduplicates quote topics and subscribes trades only for single-leg stop orders', () => {
+	it('uses stock aggregates while preserving option quote topics', () => {
 		expect(
 			planLiveOrderTopics([
 				{
@@ -42,7 +42,7 @@ describe('live order topic planning', () => {
 			])
 		).toEqual({
 			realtime: {
-				stocks: ['Q.AAPL', 'T.AAPL'],
+				stocks: ['A.AAPL'],
 				options: []
 			},
 			delayed: {

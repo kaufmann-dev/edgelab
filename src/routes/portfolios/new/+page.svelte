@@ -36,8 +36,7 @@
 	}
 
 	function dataModeLabel(mode: string): string {
-		if (mode === 'real_time') return 'Real-time';
-		return '15-minute delayed';
+		return mode === 'realtime' ? 'Real-time' : '15-minute delayed';
 	}
 
 	function accountTypeLabel(accountType: string): string {
@@ -213,7 +212,9 @@
 									{/snippet}
 								</Control>
 								<Description class="text-xs text-muted-foreground"
-									>This clock is fixed by the connected Massive stock and option plans.</Description
+									>This clock is fixed by the connected Massive stock {data.optionsTradingEnabled
+										? 'and option plans'
+										: 'plan'}.</Description
 								>
 								<FieldErrors class="text-xs text-destructive" />
 							</div>
@@ -256,74 +257,76 @@
 							</div>
 						</Field>
 
-						<Field {form} name="allowLongOptions">
-							<div class="bg-card p-5">
-								<div class="flex items-start gap-3">
-									<Control>
-										{#snippet children({ props })}
-											<Checkbox
-												{...props}
-												bind:checked={$formData.allowLongOptions}
-												class="mt-0.5 rounded-none transition-none"
-											/>
-										{/snippet}
-									</Control>
-									<div>
-										<Label>Long options</Label>
-										<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-											>Buy calls and puts with simulated premium.</Description
-										>
+						{#if data.optionsTradingEnabled}
+							<Field {form} name="allowLongOptions">
+								<div class="bg-card p-5">
+									<div class="flex items-start gap-3">
+										<Control>
+											{#snippet children({ props })}
+												<Checkbox
+													{...props}
+													bind:checked={$formData.allowLongOptions}
+													class="mt-0.5 rounded-none transition-none"
+												/>
+											{/snippet}
+										</Control>
+										<div>
+											<Label>Long options</Label>
+											<Description class="mt-1 text-xs leading-5 text-muted-foreground"
+												>Buy calls and puts with simulated premium.</Description
+											>
+										</div>
 									</div>
+									<FieldErrors class="mt-2 text-xs text-destructive" />
 								</div>
-								<FieldErrors class="mt-2 text-xs text-destructive" />
-							</div>
-						</Field>
+							</Field>
 
-						<Field {form} name="allowCoveredOptions">
-							<div class="bg-card p-5">
-								<div class="flex items-start gap-3">
-									<Control>
-										{#snippet children({ props })}
-											<Checkbox
-												{...props}
-												bind:checked={$formData.allowCoveredOptions}
-												class="mt-0.5 rounded-none transition-none"
-											/>
-										{/snippet}
-									</Control>
-									<div>
-										<Label>Covered options</Label>
-										<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-											>Write options only when a qualifying position covers them.</Description
-										>
+							<Field {form} name="allowCoveredOptions">
+								<div class="bg-card p-5">
+									<div class="flex items-start gap-3">
+										<Control>
+											{#snippet children({ props })}
+												<Checkbox
+													{...props}
+													bind:checked={$formData.allowCoveredOptions}
+													class="mt-0.5 rounded-none transition-none"
+												/>
+											{/snippet}
+										</Control>
+										<div>
+											<Label>Covered options</Label>
+											<Description class="mt-1 text-xs leading-5 text-muted-foreground"
+												>Write options only when a qualifying position covers them.</Description
+											>
+										</div>
 									</div>
+									<FieldErrors class="mt-2 text-xs text-destructive" />
 								</div>
-								<FieldErrors class="mt-2 text-xs text-destructive" />
-							</div>
-						</Field>
+							</Field>
 
-						<Field {form} name="allowDefinedRiskSpreads">
-							<div class="bg-card p-5">
-								<div class="flex items-start gap-3">
-									<Control>
-										{#snippet children({ props })}
-											<Checkbox
-												{...props}
-												bind:checked={$formData.allowDefinedRiskSpreads}
-												class="mt-0.5 rounded-none transition-none"
-											/>
-										{/snippet}
-									</Control>
-									<div>
-										<Label>Defined-risk spreads</Label>
-										<Description class="mt-1 text-xs leading-5 text-muted-foreground"
-											>Practice multi-leg strategies with capped risk.</Description
-										>
+							<Field {form} name="allowDefinedRiskSpreads">
+								<div class="bg-card p-5">
+									<div class="flex items-start gap-3">
+										<Control>
+											{#snippet children({ props })}
+												<Checkbox
+													{...props}
+													bind:checked={$formData.allowDefinedRiskSpreads}
+													class="mt-0.5 rounded-none transition-none"
+												/>
+											{/snippet}
+										</Control>
+										<div>
+											<Label>Defined-risk spreads</Label>
+											<Description class="mt-1 text-xs leading-5 text-muted-foreground"
+												>Practice multi-leg strategies with capped risk.</Description
+											>
+										</div>
 									</div>
+									<FieldErrors class="mt-2 text-xs text-destructive" />
 								</div>
-								<FieldErrors class="mt-2 text-xs text-destructive" />
-							</div>
-						</Field>
+							</Field>
+						{/if}
 
 						<Field {form} name="allowExtendedHours">
 							<div class="bg-card p-5">
@@ -488,25 +491,27 @@
 							</div>
 						</Field>
 
-						<Field {form} name="maxOptionPremium">
-							<div class="space-y-2">
-								<Control>
-									{#snippet children({ props })}
-										<Label>Max option premium</Label>
-										<Input
-											{...props}
-											type="number"
-											bind:value={$formData.maxOptionPremium}
-											min="0"
-											step="1"
-											placeholder="No limit"
-											class="mt-2 h-11 rounded-none border-border bg-background shadow-none transition-none"
-										/>
-									{/snippet}
-								</Control>
-								<FieldErrors class="text-xs text-destructive" />
-							</div>
-						</Field>
+						{#if data.optionsTradingEnabled}
+							<Field {form} name="maxOptionPremium">
+								<div class="space-y-2">
+									<Control>
+										{#snippet children({ props })}
+											<Label>Max option premium</Label>
+											<Input
+												{...props}
+												type="number"
+												bind:value={$formData.maxOptionPremium}
+												min="0"
+												step="1"
+												placeholder="No limit"
+												class="mt-2 h-11 rounded-none border-border bg-background shadow-none transition-none"
+											/>
+										{/snippet}
+									</Control>
+									<FieldErrors class="text-xs text-destructive" />
+								</div>
+							</Field>
+						{/if}
 
 						<Field {form} name="riskBehavior">
 							<div class="space-y-2 sm:col-span-2">

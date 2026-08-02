@@ -1,4 +1,4 @@
-export type PortfolioDataMode = 'realtime';
+export type PortfolioDataMode = 'realtime' | 'delayed';
 export type PortfolioStatus = 'active' | 'archived';
 
 export interface PortfolioSummary {

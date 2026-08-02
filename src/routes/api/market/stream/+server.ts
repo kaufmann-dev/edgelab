@@ -48,6 +48,24 @@ export const GET: RequestHandler = ({ url, request, locals }) => {
 				{ status: 409 }
 			);
 		}
+		if (events.data.includes('A') && !capabilities.secondBars) {
+			return json(
+				{ error: 'Second aggregate events are not included in the configured plan.' },
+				{ status: 409 }
+			);
+		}
+		if (events.data.includes('AM') && !capabilities.minuteBars) {
+			return json(
+				{ error: 'Minute aggregate events are not included in the configured plan.' },
+				{ status: 409 }
+			);
+		}
+		if (events.data.includes('LULD') && !capabilities.luld) {
+			return json(
+				{ error: 'LULD events are not included in the configured plan.' },
+				{ status: 409 }
+			);
+		}
 		topics = buildMarketTopics({
 			assetClass: assetClass.data,
 			symbols,

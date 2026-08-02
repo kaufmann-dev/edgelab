@@ -47,7 +47,7 @@ export const tradingPortfolios = pgTable(
 			'trading_portfolios_starting_cash_check',
 			sql`${table.startingCash} between 1000 and 100000000`
 		),
-		check('trading_portfolios_data_mode_check', sql`${table.dataMode} = 'realtime'`),
+		check('trading_portfolios_data_mode_check', sql`${table.dataMode} in ('realtime', 'delayed')`),
 		check('trading_portfolios_status_check', sql`${table.status} in ('active', 'archived')`),
 		check(
 			'trading_portfolios_archive_check',
@@ -65,7 +65,7 @@ export const tradingPortfolioPolicies = pgTable(
 		benchmarkSymbol: text('benchmark_symbol').notNull().default('SPY'),
 		accountType: text('account_type').notNull().default('cash'),
 		allowShortEquity: boolean('allow_short_equity').notNull().default(false),
-		allowLongOptions: boolean('allow_long_options').notNull().default(true),
+		allowLongOptions: boolean('allow_long_options').notNull().default(false),
 		allowCoveredOptions: boolean('allow_covered_options').notNull().default(false),
 		allowDefinedRiskSpreads: boolean('allow_defined_risk_spreads').notNull().default(false),
 		allowExtendedHours: boolean('allow_extended_hours').notNull().default(false),
@@ -312,6 +312,7 @@ export const tradingOrders = pgTable(
 		acceptedAt: timestamp('accepted_at', { withTimezone: true }),
 		eligibleAt: timestamp('eligible_at', { withTimezone: true }),
 		triggeredAt: timestamp('triggered_at', { withTimezone: true }),
+		lastEvaluatedBarEndAt: timestamp('last_evaluated_bar_end_at', { withTimezone: true }),
 		terminalAt: timestamp('terminal_at', { withTimezone: true }),
 		rejectionReason: text('rejection_reason'),
 		revision: integer('revision').notNull().default(1),

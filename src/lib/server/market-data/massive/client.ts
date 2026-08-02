@@ -4,6 +4,7 @@ import type {
 	AssetClass,
 	Instrument,
 	MarketSnapshot,
+	MarketDataMode,
 	NormalizedBar,
 	OptionInstrument,
 	OptionSnapshot
@@ -54,6 +55,15 @@ export interface OptionChainFilters {
 	strikePriceGte?: string;
 	strikePriceLte?: string;
 	limit?: number;
+}
+
+function requiredExecutionMode(
+	capabilities: MassiveCapabilitySet,
+	assetClass: AssetClass
+): MarketDataMode {
+	const mode = capabilities[assetClass].executionMode;
+	if (!mode) throw new Error(`${assetClass} has no executable market-data clock`);
+	return mode;
 }
 
 export interface MassiveMarketStatus {
@@ -253,7 +263,7 @@ export class MassiveRestClient implements MarketDataRestProvider {
 					.passthrough()
 					.parse(result).type;
 				return normalizeMassiveUnifiedSnapshot(result, {
-					mode: this.#capabilities[type].mode
+					mode: requiredExecutionMode(this.#capabilities, type)
 				});
 			}),
 			nextUrl: response.nextUrl
@@ -313,7 +323,7 @@ export class MassiveRestClient implements MarketDataRestProvider {
 			items: results.map((result) =>
 				normalizeMassiveOptionSnapshot(result, {
 					underlyingSymbol,
-					mode: this.#capabilities.options.mode
+					mode: requiredExecutionMode(this.#capabilities, 'options')
 				})
 			),
 			nextUrl: response.nextUrl
@@ -333,7 +343,7 @@ export class MassiveRestClient implements MarketDataRestProvider {
 				normalizeMassiveAggregateBar(result, {
 					assetClass: request.assetClass,
 					symbol: request.symbol,
-					mode: this.#capabilities[request.assetClass].mode,
+					mode: requiredExecutionMode(this.#capabilities, request.assetClass),
 					interval: request.timespan,
 					multiplier: request.multiplier
 				})

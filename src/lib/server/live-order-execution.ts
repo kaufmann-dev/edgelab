@@ -12,6 +12,7 @@ import {
 	type AssetClass,
 	type MassiveMarketHoliday,
 	type MarketDataMode,
+	type NormalizedBar,
 	type NormalizedMarketEvent,
 	type NormalizedQuote,
 	type NormalizedTrade
@@ -30,6 +31,7 @@ import {
 	SIMULATION_FEE_MODEL,
 	applyFillToLedger,
 	applyStrategyFill,
+	calculateBarFill,
 	calculateQuoteFill,
 	drizzleTradingRepository,
 	evaluateStopTrigger,
@@ -37,13 +39,16 @@ import {
 	orderTypeSchema,
 	timeInForceSchema,
 	transitionOrder,
+	validateExecutableBar,
 	type AcceptedOrder,
 	type OrderType,
+	type StrategyFill,
 	type TimeInForce
 } from '$lib/server/trading';
 
 const REFRESH_INTERVAL_MILLISECONDS = 15_000;
 const MAX_QUOTE_AGE_MILLISECONDS = 60_000;
+const BAR_ARRIVAL_GRACE_MILLISECONDS = 5_000;
 const SERIALIZATION_RETRY_DELAYS = [0, 25, 100] as const;
 const ACTIVE_ORDER_STATUSES = ['open', 'partially_filled'] as const;
 const STOP_ORDER_TYPES = new Set<OrderType>(['stop', 'stop_limit', 'trailing_stop']);
@@ -89,16 +94,18 @@ export function isDayOrderExpired(input: {
 	extendedHours: boolean;
 	holidays: readonly MassiveMarketHoliday[];
 	at: Date;
+	arrivalGraceMilliseconds?: number;
 }): boolean {
 	return (
 		input.timeInForce === 'day' &&
-		input.at >=
+		input.at.getTime() >=
 			dayOrderExpiration({
 				acceptedAt: input.acceptedAt,
 				delayMilliseconds: input.delayMilliseconds,
 				extendedHours: input.extendedHours,
 				holidays: input.holidays
-			})
+			}).getTime() +
+				(input.arrivalGraceMilliseconds ?? 0)
 	);
 }
 
@@ -110,9 +117,13 @@ export function planLiveOrderTopics(orders: readonly LiveOrderTopicInput[]): Liv
 	for (const order of orders) {
 		if (order.timeInForce === 'ioc') continue;
 		for (const leg of order.legs) {
-			topics[order.dataMode][leg.assetClass].add(`Q.${leg.symbol}`);
-			if (order.legs.length === 1 && STOP_ORDER_TYPES.has(order.orderType)) {
-				topics[order.dataMode][leg.assetClass].add(`T.${leg.symbol}`);
+			if (leg.assetClass === 'stocks') {
+				topics[order.dataMode].stocks.add(`A.${leg.symbol}`);
+			} else {
+				topics[order.dataMode].options.add(`Q.${leg.symbol}`);
+				if (order.legs.length === 1 && STOP_ORDER_TYPES.has(order.orderType)) {
+					topics[order.dataMode].options.add(`T.${leg.symbol}`);
+				}
 			}
 		}
 	}
@@ -464,7 +475,10 @@ export class LiveOrderExecutionCoordinator {
 	}
 
 	async #processEvent(event: NormalizedMarketEvent): Promise<void> {
-		if (event.kind !== 'quote' && event.kind !== 'trade') return;
+		if (event.kind !== 'quote' && event.kind !== 'trade' && event.kind !== 'bar') return;
+		if (event.kind === 'bar' && (event.assetClass !== 'stocks' || event.interval !== 'second')) {
+			return;
+		}
 		const ids = this.#orderIdsBySymbol.get(eventKey(event.assetClass, event.symbol));
 		if (!ids) return;
 		const orders = [...ids]
@@ -473,6 +487,12 @@ export class LiveOrderExecutionCoordinator {
 			.sort(compareTrackedOrders);
 		for (const tracked of orders) {
 			if (event.kind === 'trade' && !STOP_ORDER_TYPES.has(tracked.orderType)) continue;
+			if (
+				event.kind === 'bar' &&
+				(tracked.legs.length !== 1 || tracked.legs[0]?.assetClass !== 'stocks')
+			) {
+				continue;
+			}
 			try {
 				const result = await retrySerializable(() => this.#processOrder(tracked, event));
 				if (result.terminal) this.#removeTrackedOrder(tracked.orderId);
@@ -485,7 +505,7 @@ export class LiveOrderExecutionCoordinator {
 
 	async #processOrder(
 		tracked: TrackedOrder,
-		event: NormalizedQuote | NormalizedTrade
+		event: NormalizedQuote | NormalizedTrade | NormalizedBar
 	): Promise<OrderProcessingResult> {
 		return drizzleTradingRepository.transaction(tracked.portfolioId, async (unitOfWork) => {
 			const holidays = this.#holidays;
@@ -510,6 +530,7 @@ export class LiveOrderExecutionCoordinator {
 				isDayOrderExpired({
 					...order,
 					delayMilliseconds,
+					arrivalGraceMilliseconds: this.#arrivalGraceMilliseconds(order.legs),
 					holidays,
 					at: event.receivedAt
 				})
@@ -576,24 +597,70 @@ export class LiveOrderExecutionCoordinator {
 				return { terminal: false };
 			}
 
-			const quotes = this.#eligibleQuotes(order, portfolio.dataMode, event.sourceTime);
-			if (!quotes) return { terminal: false };
-			const fill = calculateQuoteFill({
-				order,
-				quotes,
-				executionModel: SIMULATION_EXECUTION_MODEL,
-				quoteContext: {
-					attemptAt: event.receivedAt,
+			let fill: StrategyFill | undefined;
+			if (event.kind === 'bar') {
+				if (order.lastEvaluatedBarEndAt && event.endTime <= order.lastEvaluatedBarEndAt) {
+					return { terminal: false };
+				}
+				const barContext = {
+					attemptAt: new Date(),
 					expectedMode: portfolio.dataMode,
 					expectedDelayMilliseconds: delayMilliseconds,
 					maxTransportAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
 					maxSourceAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
-					futureToleranceMilliseconds: 1_000,
-					maxSourceSkewMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
-					maxReceiptSkewMilliseconds: MAX_QUOTE_AGE_MILLISECONDS
-				},
-				feeModel: SIMULATION_FEE_MODEL
-			});
+					futureToleranceMilliseconds: 1_000
+				};
+				if (!validateExecutableBar(event, barContext, order.eligibleAt).executable) {
+					return { terminal: false };
+				}
+				const evaluation = calculateBarFill({
+					order,
+					bar: event,
+					executionModel: SIMULATION_EXECUTION_MODEL,
+					barContext,
+					feeModel: SIMULATION_FEE_MODEL
+				});
+				const newlyTriggered = evaluation.triggered && !order.triggeredAt;
+				const previousRevision = order.revision;
+				order = {
+					...order,
+					triggeredAt: newlyTriggered ? event.sourceTime : order.triggeredAt,
+					lastEvaluatedBarEndAt: event.endTime,
+					revision: previousRevision + 1
+				};
+				if (!(await unitOfWork.updateOrder(order, previousRevision))) {
+					throw new Error('Order changed while its aggregate cursor was being updated');
+				}
+				if (newlyTriggered) {
+					await unitOfWork.appendOrderEvent({
+						orderId: order.id,
+						fromStatus: order.status,
+						toStatus: order.status,
+						at: event.sourceTime,
+						reason: 'Triggered by a matching first-seen aggregate bar'
+					});
+				}
+				fill = evaluation.fill;
+			} else {
+				const quotes = this.#eligibleQuotes(order, portfolio.dataMode, event.sourceTime);
+				if (!quotes) return { terminal: false };
+				fill = calculateQuoteFill({
+					order,
+					quotes,
+					executionModel: SIMULATION_EXECUTION_MODEL,
+					quoteContext: {
+						attemptAt: event.receivedAt,
+						expectedMode: portfolio.dataMode,
+						expectedDelayMilliseconds: delayMilliseconds,
+						maxTransportAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
+						maxSourceAgeMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
+						futureToleranceMilliseconds: 1_000,
+						maxSourceSkewMilliseconds: MAX_QUOTE_AGE_MILLISECONDS,
+						maxReceiptSkewMilliseconds: MAX_QUOTE_AGE_MILLISECONDS
+					},
+					feeModel: SIMULATION_FEE_MODEL
+				});
+			}
 			if (!fill) return { terminal: false };
 			const netCashChange = fill.legs.reduce((change, leg) => {
 				const grossAmount = fillGrossAmount(leg);
@@ -612,6 +679,25 @@ export class LiveOrderExecutionCoordinator {
 					netCashChange
 				})
 			) {
+				if (event.kind === 'bar') {
+					const previousRevision = order.revision;
+					const canceled = transitionOrder(order, 'canceled', {
+						at: event.receivedAt,
+						reason: 'Aggregate execution exceeded available cash'
+					});
+					if (!(await unitOfWork.updateOrder(canceled, previousRevision))) {
+						throw new Error('Order changed during aggregate funding cancellation');
+					}
+					await unitOfWork.appendOrderEvent({
+						orderId: order.id,
+						fromStatus: order.status,
+						toStatus: 'canceled',
+						at: event.receivedAt,
+						reason: 'Canceled because the aggregate fill exceeded available cash'
+					});
+					await unitOfWork.releaseOrderReservations(order.id, event.receivedAt);
+					return { terminal: true };
+				}
 				return { terminal: false };
 			}
 
@@ -645,7 +731,10 @@ export class LiveOrderExecutionCoordinator {
 				fromStatus: previousStatus,
 				toStatus: order.status,
 				at: fill.receivedAt,
-				reason: 'Filled by the live quote execution model'
+				reason:
+					event.kind === 'bar'
+						? 'Filled by the first-seen aggregate execution model'
+						: 'Filled by the live quote execution model'
 			});
 			await unitOfWork.consumeOrderReservations({
 				orderId: order.id,
@@ -690,10 +779,13 @@ export class LiveOrderExecutionCoordinator {
 			legs.map((leg) => {
 				const assetClass = 'instrument' in leg ? leg.instrument.assetClass : leg.assetClass;
 				const capability = capabilities[assetClass];
-				if (capability.mode !== dataMode) {
+				if (capability.executionMode !== dataMode) {
 					throw new Error(
 						`${assetClass} ${dataMode} data does not match the configured Massive plan`
 					);
+				}
+				if (capability.delayMinutes === null) {
+					throw new Error(`${assetClass} has no executable market-data delay`);
 				}
 				return capability.delayMinutes * 60 * 1_000;
 			})
@@ -704,9 +796,19 @@ export class LiveOrderExecutionCoordinator {
 		return delay;
 	}
 
+	#arrivalGraceMilliseconds(
+		legs: readonly (LiveOrderTopicLeg | AcceptedOrder['legs'][number])[]
+	): number {
+		return legs.every(
+			(leg) => ('instrument' in leg ? leg.instrument.assetClass : leg.assetClass) === 'stocks'
+		)
+			? BAR_ARRIVAL_GRACE_MILLISECONDS
+			: 0;
+	}
+
 	#orderAllowsEvent(
 		order: AcceptedOrder,
-		event: NormalizedQuote | NormalizedTrade,
+		event: NormalizedQuote | NormalizedTrade | NormalizedBar,
 		delayMilliseconds: number,
 		holidays: readonly MassiveMarketHoliday[]
 	): boolean {
@@ -718,6 +820,7 @@ export class LiveOrderExecutionCoordinator {
 				orderType: order.type,
 				allStockLegs
 			});
+		if (event.kind === 'bar') return allowed(event.startTime);
 		return (
 			allowed(event.sourceTime) && allowed(logicalMarketTime(event.receivedAt, delayMilliseconds))
 		);
@@ -746,6 +849,7 @@ export class LiveOrderExecutionCoordinator {
 						!isDayOrderExpired({
 							...order,
 							delayMilliseconds,
+							arrivalGraceMilliseconds: this.#arrivalGraceMilliseconds(order.legs),
 							holidays,
 							at
 						})

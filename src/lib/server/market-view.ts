@@ -48,6 +48,7 @@ export function serializeBar(bar: NormalizedBar) {
 		vwap: bar.vwap?.toString(),
 		transactions: bar.transactions,
 		mode: bar.mode,
+		sourceTime: bar.sourceTime.toISOString(),
 		receivedAt: bar.receivedAt.toISOString()
 	};
 }

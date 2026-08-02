@@ -171,6 +171,7 @@ export function mapAcceptedOrderRows(
 			acceptedAt: order.acceptedAt,
 			eligibleAt: order.eligibleAt,
 			triggeredAt: order.triggeredAt ?? undefined,
+			lastEvaluatedBarEndAt: order.lastEvaluatedBarEndAt ?? undefined,
 			trailingWatermark:
 				order.trailingWatermark === null ? undefined : decimal(order.trailingWatermark),
 			trailingStopPrice:
@@ -260,6 +261,7 @@ function orderValues(order: AcceptedOrder): typeof tradingOrders.$inferInsert {
 		acceptedAt: order.acceptedAt,
 		eligibleAt: order.eligibleAt,
 		triggeredAt: order.triggeredAt ?? null,
+		lastEvaluatedBarEndAt: order.lastEvaluatedBarEndAt ?? null,
 		terminalAt: order.terminalAt ?? null,
 		rejectionReason: order.rejectionReason ?? null,
 		revision: order.revision,

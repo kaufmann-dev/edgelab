@@ -34,9 +34,9 @@ export const createPortfolioSchema = z
 			.regex(/^[A-Z][A-Z0-9.]{0,9}$/, 'Enter a valid US ticker')
 			.default('SPY'),
 		accountType: z.enum(['cash', 'margin']).default('cash'),
-		dataMode: z.literal('real_time').default('real_time'),
+		dataMode: z.enum(['realtime', 'delayed']).default('delayed'),
 		allowShortEquity: z.boolean().default(false),
-		allowLongOptions: z.boolean().default(true),
+		allowLongOptions: z.boolean().default(false),
 		allowCoveredOptions: z.boolean().default(false),
 		allowDefinedRiskSpreads: z.boolean().default(false),
 		allowExtendedHours: z.boolean().default(false),

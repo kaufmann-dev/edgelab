@@ -1,16 +1,18 @@
 import { env } from '$env/dynamic/private';
 import {
 	MassiveRestClient,
+	massivePlanSelectionSchema,
 	massivePlanTierSchema,
 	resolveMassiveCapabilities,
 	type MassiveCapabilitySet,
+	type MassivePlanSelection,
 	type MassivePlanTier
 } from '$lib/server/market-data';
 
 export interface MarketEnvironment {
 	apiKey: string;
 	stocksPlan: MassivePlanTier;
-	optionsPlan: MassivePlanTier;
+	optionsPlan: MassivePlanSelection;
 	capabilities: MassiveCapabilitySet;
 }
 
@@ -24,7 +26,8 @@ function required(source: EnvironmentSource, name: string): string {
 
 export function getMarketEnvironment(source: EnvironmentSource = env): MarketEnvironment {
 	const stocksPlan = massivePlanTierSchema.parse(required(source, 'MASSIVE_STOCKS_PLAN'));
-	const optionsPlan = massivePlanTierSchema.parse(required(source, 'MASSIVE_OPTIONS_PLAN'));
+	const configuredOptionsPlan = source.MASSIVE_OPTIONS_PLAN?.trim();
+	const optionsPlan = massivePlanSelectionSchema.parse(configuredOptionsPlan || 'none');
 
 	return {
 		apiKey: required(source, 'MASSIVE_API_KEY'),

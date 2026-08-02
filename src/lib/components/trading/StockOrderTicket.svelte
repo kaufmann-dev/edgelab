@@ -35,10 +35,12 @@
 		feedState?: MarketFeedState;
 		marketSession?: string;
 		feedUpdatedLabel?: string;
+		priceSource?: 'aggregate' | 'quote';
 		currency?: string;
 		locale?: string;
 		reviewDisabled?: boolean;
 		reviewing?: boolean;
+		allowIoc?: boolean;
 		showBracketOrders?: boolean;
 		simulationLabel?: string;
 	}
@@ -57,10 +59,12 @@
 		feedState,
 		marketSession,
 		feedUpdatedLabel,
+		priceSource = 'quote',
 		currency = 'USD',
 		locale = 'en-US',
 		reviewDisabled = false,
 		reviewing = false,
+		allowIoc = true,
 		showBracketOrders = false,
 		simulationLabel = 'Simulation only · No real money'
 	}: Props = $props();
@@ -114,6 +118,9 @@
 			</div>
 			<div class="shrink-0 text-right">
 				<p class="font-semibold tabular-nums">{money.format(quote.last)}</p>
+				<p class="text-xs text-muted-foreground">
+					{priceSource === 'aggregate' ? 'Completed aggregate close' : 'Latest price'}
+				</p>
 				{#if quote.change !== undefined}
 					<p class={['text-xs tabular-nums', toneForNumber(quote.change)]}>
 						{signedCurrency(money, quote.change)}{#if quote.changePercent !== undefined}
@@ -123,18 +130,20 @@
 			</div>
 		</div>
 		<div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-			<p class="text-xs text-muted-foreground tabular-nums">
-				Bid {quote.bid === undefined ? '—' : money.format(quote.bid)} · Ask {quote.ask === undefined
-					? '—'
-					: money.format(quote.ask)}
-			</p>
+			{#if priceSource === 'quote'}
+				<p class="text-xs text-muted-foreground tabular-nums">
+					Bid {quote.bid === undefined ? '—' : money.format(quote.bid)} · Ask {quote.ask ===
+					undefined
+						? '—'
+						: money.format(quote.ask)}
+				</p>
+			{/if}
 			{#if feedState}
 				<MarketFeedStatus
 					state={feedState}
 					{marketSession}
 					updatedLabel={feedUpdatedLabel}
 					asOf={quote.asOf}
-					compact
 				/>
 			{:else}
 				<p class="text-xs text-muted-foreground">As of {quote.asOf}</p>
@@ -333,7 +342,7 @@
 				>
 					<option value="day">Day</option>
 					{#if draft.orderType !== 'market'}<option value="gtc">GTC</option>{/if}
-					{#if draft.orderType === 'market' || draft.orderType === 'limit'}
+					{#if allowIoc && (draft.orderType === 'market' || draft.orderType === 'limit')}
 						<option value="ioc">IOC</option>
 					{/if}
 				</select>

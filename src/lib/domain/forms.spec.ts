@@ -3,13 +3,12 @@ import { createPortfolioSchema, stockOrderSchema } from './forms';
 
 describe('createPortfolioSchema', () => {
 	it('normalizes a valid portfolio and preserves intentional defaults', () => {
-		expect.assertions(4);
+		expect.assertions(6);
 		const parsed = createPortfolioSchema.parse({
 			name: '  First run  ',
 			startingCapital: '25000',
 			benchmarkSymbol: 'spy',
 			accountType: 'cash',
-			dataMode: 'real_time',
 			acknowledgeSimulation: true
 		});
 
@@ -17,6 +16,8 @@ describe('createPortfolioSchema', () => {
 		expect(parsed.startingCapital).toBe(25_000);
 		expect(parsed.benchmarkSymbol).toBe('SPY');
 		expect(parsed.riskBehavior).toBe('block');
+		expect(parsed.dataMode).toBe('delayed');
+		expect(parsed.allowLongOptions).toBe(false);
 	});
 
 	it('rejects short selling in a cash portfolio', () => {
@@ -26,7 +27,7 @@ describe('createPortfolioSchema', () => {
 			startingCapital: 10_000,
 			benchmarkSymbol: 'SPY',
 			accountType: 'cash',
-			dataMode: 'real_time',
+			dataMode: 'realtime',
 			allowShortEquity: true,
 			acknowledgeSimulation: true
 		});
@@ -36,7 +37,7 @@ describe('createPortfolioSchema', () => {
 		);
 	});
 
-	it('accepts only the real-time market-data mode supported by live execution', () => {
+	it('accepts only the canonical executable market-data modes', () => {
 		expect.assertions(4);
 		const portfolio = {
 			name: 'Market data modes',
@@ -46,13 +47,13 @@ describe('createPortfolioSchema', () => {
 			acknowledgeSimulation: true
 		};
 
-		expect(createPortfolioSchema.safeParse({ ...portfolio, dataMode: 'real_time' }).success).toBe(
+		expect(createPortfolioSchema.safeParse({ ...portfolio, dataMode: 'realtime' }).success).toBe(
 			true
 		);
 		expect(createPortfolioSchema.safeParse({ ...portfolio, dataMode: 'delayed' }).success).toBe(
-			false
+			true
 		);
-		expect(createPortfolioSchema.safeParse({ ...portfolio, dataMode: 'replay' }).success).toBe(
+		expect(createPortfolioSchema.safeParse({ ...portfolio, dataMode: 'real_time' }).success).toBe(
 			false
 		);
 		expect(createPortfolioSchema.safeParse({ ...portfolio, dataMode: 'end_of_day' }).success).toBe(

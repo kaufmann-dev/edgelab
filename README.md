@@ -1,13 +1,14 @@
 # EdgeLab
 
-EdgeLab is an authenticated paper-trading application for practicing US stock and option
-workflows with Massive market data. It keeps portfolios, cash, positions, orders, fills, journal
+EdgeLab is an authenticated paper-trading application for practicing US stock workflows with
+Massive market data. Optional option workflows become available when the configured plans provide
+the required execution feeds. EdgeLab keeps portfolios, cash, positions, orders, fills, journal
 entries, and analytics inside the simulator; it does not connect to a brokerage or use real money.
 
 Each user can create isolated USD portfolios with independent starting capital, permissions, and
-risk limits. The interface includes stock and one-to-four-leg option tickets, live watchlists,
-working orders, positions, activity, a trade journal, benchmark-aware portfolio analytics, and
-short learning modules.
+risk limits. The interface includes stock tickets, capability-gated one-to-four-leg option
+tickets, live watchlists, working orders, positions, activity, a trade journal, benchmark-aware
+portfolio analytics, and short learning modules.
 
 ## Run Locally
 
@@ -17,7 +18,7 @@ Prerequisites:
 - pnpm 11.18.0
 - PostgreSQL 15 or newer (PostgreSQL 17 is recommended)
 - A confidential OpenID Connect client
-- A Massive API key and the stock and option plan tiers associated with that key
+- A Massive API key with Stocks Starter or a higher Stocks plan
 
 Install dependencies and create local configuration:
 
@@ -40,7 +41,7 @@ provider.
 
 ## Configuration
 
-All configuration is required at runtime:
+The core configuration is required at runtime:
 
 - `DATABASE_URL` is a PostgreSQL connection URL.
 - `ORIGIN` is EdgeLab's canonical origin. Use HTTPS in production; only localhost development may
@@ -50,9 +51,12 @@ All configuration is required at runtime:
 - `OIDC_DATA_ENCRYPTION_KEY` is a base64-encoded, exactly 32-byte key used to encrypt sensitive
   flow data at rest.
 - `MASSIVE_API_KEY` authenticates server-side Massive REST and WebSocket requests.
-- `MASSIVE_STOCKS_PLAN` and `MASSIVE_OPTIONS_PLAN` declare the key's actual entitlements. Live
-  simulation requires both values to be `advanced` so stocks and options share one real-time
-  clock with snapshots, quotes, trades, and WebSockets.
+- `MASSIVE_STOCKS_PLAN` declares the key's actual Stocks tier. `starter` is the baseline and uses
+  Massive's 15-minute-delayed snapshots and second-aggregate WebSocket feed.
+- `MASSIVE_OPTIONS_PLAN` is optional. Omit it when the key has no Options plan; when set, it must
+  be the key's actual Options tier. Option chains follow that plan's snapshot entitlement. Option
+  order execution remains disabled unless the Stocks and Options plans share one clock and the
+  Options plan supplies snapshots, WebSockets, quotes, and trades.
 
 Register these exact OIDC redirect URIs for the value of `ORIGIN`:
 
@@ -65,29 +69,33 @@ The client must use authorization code flow, `client_secret_post`, and PKCE S256
 mode is not supported. EdgeLab validates state and nonce, stores opaque local session tokens, and
 applies a 24-hour idle timeout with a seven-day absolute lifetime.
 
-The Massive capability layer still identifies lower plan entitlements accurately, but EdgeLab
-fails closed instead of creating a portfolio without an executable quote stream. It labels source
-provenance, validates both receive time and the provider's source time, and never silently
-substitutes another feed.
+The Massive capability layer checks declared entitlements before opening a stream or calling a
+plan-gated endpoint. EdgeLab labels source provenance, validates both receive time and provider
+source time, and never presents aggregate bars as quotes or trades.
 
 ## Simulation Rules
 
 - Portfolio state and every mutation are owner-scoped. Cash and quantity calculations use exact
   decimal arithmetic and an append-only cash ledger.
-- A quote must have a positive, non-crossed NBBO and be no more than 60 seconds old on both the
-  wall clock and the portfolio's logical market clock. Multi-leg quotes must share a coherent
-  timestamp. Naked options are disabled, and a strategy may contain at most four compatible
-  option legs.
+- Stocks use the latest completed minute returned by Massive's aggregate endpoint for preview and
+  reservation. Execution waits for the first eligible future second aggregate, so an order never
+  fills from a bar already visible when it was submitted. Delayed bars are validated against the
+  portfolio's 15-minute logical market clock and retain their provider and receipt timestamps.
+- Options execution requires a positive, non-crossed NBBO no more than 60 seconds old on both the
+  wall clock and portfolio's logical market clock. Multi-leg quotes must share a coherent
+  timestamp. Naked options are disabled, and a strategy may contain at most four compatible legs.
 - The initial execution model uses zero artificial latency, 2 basis points of stock slippage,
-  5 basis points of option slippage, and at most 25% of displayed quote liquidity.
+  5 basis points of option slippage, and at most 25% of aggregate volume or displayed option quote
+  liquidity.
 - Stock trades have no simulated per-share fee. Options cost $0.65 per contract with no minimum
   order fee.
 - Risk checks cover available cash or collateral, portfolio permissions, order and position
   limits, gross exposure, daily loss, drawdown, option premium, and required trade plans. Market
   estimates include simulated slippage before cash is reserved.
-- Immediate marketable orders may fill atomically at placement. DAY, GTC, and eligible IOC orders
-  are supported. Resting orders are restored at server startup and matched from Massive quote and
-  trade streams; partial fills, stop, stop-limit, and trailing-stop state persist in PostgreSQL.
+- Stock market, limit, stop, and stop-limit orders support DAY or GTC and match from Massive's
+  second-aggregate stream. Aggregate-priced stock orders do not offer IOC or trailing stops because
+  those semantics require an immediate or ordered tick feed. Eligible option orders may fill from
+  quote/trade streams. Resting orders and first-seen bar cursors persist in PostgreSQL.
 - The matcher uses the US equity calendar and regular/extended sessions, expires DAY orders at the
   deterministic exchange boundary, and fails closed when calendar or executable market data is
   unavailable. Extended-hours execution is limited to opted-in stock limit orders.
@@ -140,7 +148,8 @@ Configure the application in Coolify with these UI values:
 - **Replicas:** exactly `1`, because Massive WebSocket fan-out is process-local.
 - **Database:** attach a persistent PostgreSQL resource and use its internal connection URL.
 
-Set every variable from `.env.example` in Coolify. Treat `DATABASE_URL`, `OIDC_CLIENT_SECRET`,
+Set every uncommented variable from `.env.example` in Coolify. Add `MASSIVE_OPTIONS_PLAN` only
+when that key has an Options plan. Treat `DATABASE_URL`, `OIDC_CLIENT_SECRET`,
 `OIDC_DATA_ENCRYPTION_KEY`, and `MASSIVE_API_KEY` as secrets. Set `ORIGIN` to the public HTTPS
 origin, and register its `/auth/callback` and `/auth/logout/callback` URLs with the OIDC provider.
 
@@ -149,7 +158,7 @@ running the pinned pnpm 11.18.0 explicitly during install and build. Node 24 rem
 `package.json`; use a full-ICU Node build rather than a custom small-ICU build. The adapter-node
 server reads Coolify's injected `PORT` at runtime.
 
-The live matcher starts with the server and does not require an open browser. Browser quote streams
+The live matcher starts with the server and does not require an open browser. Browser market streams
 are authenticated, resource-capped, and reconnect at least once per minute so session expiry and
 revocation are enforced promptly. OIDC login starts are rate-limited, and expired login flows and
 sessions are pruned automatically.

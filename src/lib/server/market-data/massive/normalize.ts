@@ -63,6 +63,7 @@ const websocketBarSchema = z
 		l: decimalSchema,
 		c: decimalSchema,
 		v: decimalSchema,
+		dv: decimalSchema.optional(),
 		vw: decimalSchema.optional(),
 		s: timestampInputSchema,
 		e: timestampInputSchema
@@ -256,7 +257,7 @@ export function normalizeMassiveWebSocketFrame(
 							high: event.h,
 							low: event.l,
 							close: event.c,
-							volume: event.v,
+							volume: context.assetClass === 'stocks' ? (event.dv ?? event.v) : event.v,
 							vwap: event.vw,
 							sourceTime: endTime,
 							receivedAt,
@@ -656,6 +657,7 @@ export function normalizeMassiveAggregateBar(
 		.passthrough()
 		.parse(input);
 	const startTime = normalizeMassiveTimestamp(bar.t);
+	const endTime = intervalEnd(startTime, context.interval, context.multiplier);
 	return normalizedBarSchema.parse({
 		kind: 'bar',
 		assetClass: context.assetClass,
@@ -663,7 +665,7 @@ export function normalizeMassiveAggregateBar(
 		mode: context.mode,
 		interval: context.interval,
 		startTime,
-		endTime: intervalEnd(startTime, context.interval, context.multiplier),
+		endTime,
 		open: bar.o,
 		high: bar.h,
 		low: bar.l,
@@ -671,7 +673,7 @@ export function normalizeMassiveAggregateBar(
 		volume: bar.v,
 		vwap: bar.vw,
 		transactions: bar.n,
-		sourceTime: startTime,
+		sourceTime: endTime,
 		receivedAt: context.receivedAt ?? new Date(),
 		rawTimestamp: timestampText(bar.t)
 	});

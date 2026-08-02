@@ -33,6 +33,9 @@ export interface PositionViewResult {
 }
 
 function markFromSnapshot(snapshot: MarketSnapshot): Decimal | null {
+	if (snapshot.assetClass === 'stocks' && snapshot.lastMinute?.close.greaterThan(0)) {
+		return snapshot.lastMinute.close;
+	}
 	if (
 		snapshot.quote &&
 		snapshot.quote.bidPrice.greaterThan(0) &&
@@ -94,10 +97,13 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 				marketError = `${unavailable.join(' and ')} snapshots are not included in the configured Massive plan.`;
 			}
 
-			const positionSymbols =
-				unavailable.length === 0
-					? [...new Set(input.positions.map((position) => position.symbol))]
-					: [];
+			const positionSymbols = [
+				...new Set(
+					input.positions
+						.filter((position) => environment.capabilities[position.assetClass].snapshots)
+						.map((position) => position.symbol)
+				)
+			];
 			const benchmarkRequestSymbol = environment.capabilities.stocks.snapshots
 				? benchmarkSymbol
 				: null;
@@ -236,10 +242,19 @@ export async function buildPositionView(input: PositionViewInput): Promise<Posit
 	});
 
 	const modes = new Set(snapshots.map((snapshot) => snapshot.mode));
-	const latestAsOf = snapshots.reduce<Date | null>(
-		(latest, snapshot) => (!latest || snapshot.asOf > latest ? snapshot.asOf : latest),
-		null
-	);
+	const latestAsOf = snapshots.reduce<Date | null>((latest, snapshot) => {
+		const sourceTime =
+			snapshot.assetClass === 'stocks'
+				? (snapshot.lastMinute?.sourceTime ??
+					snapshot.lastTrade?.sourceTime ??
+					snapshot.quote?.sourceTime ??
+					snapshot.asOf)
+				: (snapshot.quote?.sourceTime ??
+					snapshot.lastTrade?.sourceTime ??
+					snapshot.lastMinute?.sourceTime ??
+					snapshot.asOf);
+		return !latest || sourceTime > latest ? sourceTime : latest;
+	}, null);
 	const marketFeed =
 		latestAsOf === null
 			? null

@@ -4,15 +4,16 @@ import type { MarketSnapshot } from '$lib/server/market-data';
 import type { PositionRecord } from './portfolio-read';
 
 const marketMocks = vi.hoisted(() => ({
-	getUnifiedSnapshots: vi.fn()
+	getUnifiedSnapshots: vi.fn(),
+	capabilities: {
+		stocks: { snapshots: true },
+		options: { snapshots: true }
+	}
 }));
 
 vi.mock('$lib/server/market', () => ({
 	getMarketEnvironment: () => ({
-		capabilities: {
-			stocks: { snapshots: true },
-			options: { snapshots: true }
-		}
+		capabilities: marketMocks.capabilities
 	}),
 	getMarketDataProvider: () => ({
 		getUnifiedSnapshots: marketMocks.getUnifiedSnapshots
@@ -67,6 +68,8 @@ function snapshot(overrides: Partial<MarketSnapshot> = {}): MarketSnapshot {
 describe('buildPositionView valuation', () => {
 	beforeEach(() => {
 		marketMocks.getUnifiedSnapshots.mockReset();
+		marketMocks.capabilities.stocks.snapshots = true;
+		marketMocks.capabilities.options.snapshots = true;
 	});
 
 	it('returns an exact complete valuation for a cash-only portfolio', async () => {
@@ -197,6 +200,35 @@ describe('buildPositionView valuation', () => {
 		expect(marketMocks.getUnifiedSnapshots).toHaveBeenCalledWith(['AAPL', 'SPY']);
 		expect(view.benchmarkPrice?.toFixed()).toBe('401');
 		expect(view.valuation).not.toBeNull();
+	});
+
+	it('still marks supported stocks when option snapshots are unavailable', async () => {
+		marketMocks.capabilities.options.snapshots = false;
+		marketMocks.getUnifiedSnapshots.mockResolvedValue({ items: [snapshot()] });
+
+		const view = await buildPositionView({
+			positions: [
+				position(),
+				position({
+					id: 'position-option',
+					instrumentId: 'instrument-option',
+					symbol: 'O:AAPL260821C00200000',
+					name: 'AAPL Aug 21 2026 $200 Call',
+					assetClass: 'options',
+					underlyingSymbol: 'AAPL',
+					expirationDate: '2026-08-21',
+					contractMultiplier: '100'
+				})
+			],
+			cashBalance: '1000',
+			reservedCash: '0',
+			realizedPnl: '0'
+		});
+
+		expect(marketMocks.getUnifiedSnapshots).toHaveBeenCalledWith(['AAPL']);
+		expect(view.positions.find((row) => row.symbol === 'AAPL')?.mark).toBe(111);
+		expect(view.positions.find((row) => row.assetType === 'option')?.mark).toBeNull();
+		expect(view.marketError).toContain('options snapshots');
 	});
 
 	it('falls back from a non-positive quote to benchmark trade and bar prices', async () => {

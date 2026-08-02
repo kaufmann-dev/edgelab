@@ -5,6 +5,7 @@ import {
 	instrumentSchema,
 	marketDataModeSchema,
 	type Instrument,
+	type NormalizedBar,
 	type NormalizedQuote
 } from '../market-data/types';
 
@@ -149,6 +150,7 @@ export interface AcceptedOrder extends Omit<OrderDraft, 'legs'> {
 	triggeredAt?: Date;
 	trailingWatermark?: Decimal;
 	trailingStopPrice?: Decimal;
+	lastEvaluatedBarEndAt?: Date;
 	terminalAt?: Date;
 	rejectionReason?: string;
 	revision: number;
@@ -215,6 +217,7 @@ export type ExecutionModel = z.infer<typeof executionModelSchema>;
 
 export interface MarketMarks {
 	quotes: ReadonlyMap<string, NormalizedQuote>;
+	bars: ReadonlyMap<string, NormalizedBar>;
 }
 
 export type RiskViolationCode =
@@ -224,6 +227,8 @@ export type RiskViolationCode =
 	| 'unsupported_multi_leg_strategy'
 	| 'unsupported_option_deliverable'
 	| 'invalid_quantity'
+	| 'market_data_unavailable'
+	| 'market_data_stale'
 	| 'quote_unavailable'
 	| 'quote_stale'
 	| 'extended_hours_not_supported'
