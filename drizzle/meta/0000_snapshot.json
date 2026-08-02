@@ -1,0 +1,2766 @@
+{
+  "id": "9fd9ccc1-6807-45be-aed3-83d19a41af2f",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.auth_sessions": {
+      "name": "auth_sessions",
+      "schema": "",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id_token_ciphertext": {
+          "name": "id_token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_active_at": {
+          "name": "last_active_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idle_expires_at": {
+          "name": "idle_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "absolute_expires_at": {
+          "name": "absolute_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "auth_sessions_user_id_idx": {
+          "name": "auth_sessions_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_sessions_idle_expires_at_idx": {
+          "name": "auth_sessions_idle_expires_at_idx",
+          "columns": [
+            {
+              "expression": "idle_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_sessions_absolute_expires_at_idx": {
+          "name": "auth_sessions_absolute_expires_at_idx",
+          "columns": [
+            {
+              "expression": "absolute_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "auth_sessions_user_id_app_users_id_fk": {
+          "name": "auth_sessions_user_id_app_users_id_fk",
+          "tableFrom": "auth_sessions",
+          "tableTo": "app_users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "auth_sessions_idle_not_after_absolute_check": {
+          "name": "auth_sessions_idle_not_after_absolute_check",
+          "value": "\"auth_sessions\".\"idle_expires_at\" <= \"auth_sessions\".\"absolute_expires_at\""
+        },
+        "auth_sessions_activity_order_check": {
+          "name": "auth_sessions_activity_order_check",
+          "value": "\"auth_sessions\".\"created_at\" <= \"auth_sessions\".\"last_active_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.oidc_login_requests": {
+      "name": "oidc_login_requests",
+      "schema": "",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nonce": {
+          "name": "nonce",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_verifier_ciphertext": {
+          "name": "code_verifier_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "return_to": {
+          "name": "return_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "oidc_login_requests_state_uidx": {
+          "name": "oidc_login_requests_state_uidx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "oidc_login_requests_expires_at_idx": {
+          "name": "oidc_login_requests_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "oidc_login_requests_expiry_order_check": {
+          "name": "oidc_login_requests_expiry_order_check",
+          "value": "\"oidc_login_requests\".\"created_at\" < \"oidc_login_requests\".\"expires_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.app_users": {
+      "name": "app_users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "issuer": {
+          "name": "issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_login_at": {
+          "name": "last_login_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "app_users_issuer_subject_uidx": {
+          "name": "app_users_issuer_subject_uidx",
+          "columns": [
+            {
+              "expression": "issuer",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "app_users_last_login_at_idx": {
+          "name": "app_users_last_login_at_idx",
+          "columns": [
+            {
+              "expression": "last_login_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.trading_cash_ledger": {
+      "name": "trading_cash_ledger",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fill_id": {
+          "name": "fill_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entry_type": {
+          "name": "entry_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD'"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_cash_ledger_portfolio_occurred_idx": {
+          "name": "trading_cash_ledger_portfolio_occurred_idx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_cash_ledger_fill_idx": {
+          "name": "trading_cash_ledger_fill_idx",
+          "columns": [
+            {
+              "expression": "fill_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_cash_ledger_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_cash_ledger_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_cash_ledger",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "trading_cash_ledger_fill_id_trading_fills_id_fk": {
+          "name": "trading_cash_ledger_fill_id_trading_fills_id_fk",
+          "tableFrom": "trading_cash_ledger",
+          "tableTo": "trading_fills",
+          "columnsFrom": [
+            "fill_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_cash_ledger_type_check": {
+          "name": "trading_cash_ledger_type_check",
+          "value": "\"trading_cash_ledger\".\"entry_type\" in ('initial_capital', 'trade', 'fee', 'dividend', 'adjustment')"
+        },
+        "trading_cash_ledger_amount_check": {
+          "name": "trading_cash_ledger_amount_check",
+          "value": "\"trading_cash_ledger\".\"amount\" <> 0"
+        },
+        "trading_cash_ledger_currency_check": {
+          "name": "trading_cash_ledger_currency_check",
+          "value": "\"trading_cash_ledger\".\"currency\" = 'USD'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_equity_snapshots": {
+      "name": "trading_equity_snapshots",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "as_of": {
+          "name": "as_of",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cash_balance": {
+          "name": "cash_balance",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "net_market_value": {
+          "name": "net_market_value",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gross_exposure": {
+          "name": "gross_exposure",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "equity": {
+          "name": "equity",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "realized_pnl": {
+          "name": "realized_pnl",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "unrealized_pnl": {
+          "name": "unrealized_pnl",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "benchmark_price": {
+          "name": "benchmark_price",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_equity_snapshots_portfolio_as_of_uidx": {
+          "name": "trading_equity_snapshots_portfolio_as_of_uidx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "as_of",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_equity_snapshots_as_of_idx": {
+          "name": "trading_equity_snapshots_as_of_idx",
+          "columns": [
+            {
+              "expression": "as_of",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_equity_snapshots_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_equity_snapshots_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_equity_snapshots",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_equity_snapshots_balance_check": {
+          "name": "trading_equity_snapshots_balance_check",
+          "value": "\"trading_equity_snapshots\".\"cash_balance\" >= 0 and \"trading_equity_snapshots\".\"gross_exposure\" >= 0"
+        },
+        "trading_equity_snapshots_exposure_check": {
+          "name": "trading_equity_snapshots_exposure_check",
+          "value": "abs(\"trading_equity_snapshots\".\"net_market_value\") <= \"trading_equity_snapshots\".\"gross_exposure\""
+        },
+        "trading_equity_snapshots_equity_check": {
+          "name": "trading_equity_snapshots_equity_check",
+          "value": "\"trading_equity_snapshots\".\"equity\" = \"trading_equity_snapshots\".\"cash_balance\" + \"trading_equity_snapshots\".\"net_market_value\""
+        },
+        "trading_equity_snapshots_benchmark_check": {
+          "name": "trading_equity_snapshots_benchmark_check",
+          "value": "\"trading_equity_snapshots\".\"benchmark_price\" is null or \"trading_equity_snapshots\".\"benchmark_price\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_fill_legs": {
+      "name": "trading_fill_legs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "fill_id": {
+          "name": "fill_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order_leg_id": {
+          "name": "order_leg_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instrument_id": {
+          "name": "instrument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price": {
+          "name": "price",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "multiplier": {
+          "name": "multiplier",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gross_amount": {
+          "name": "gross_amount",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fees": {
+          "name": "fees",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_fill_legs_fill_order_leg_uidx": {
+          "name": "trading_fill_legs_fill_order_leg_uidx",
+          "columns": [
+            {
+              "expression": "fill_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "order_leg_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_fill_legs_order_leg_idx": {
+          "name": "trading_fill_legs_order_leg_idx",
+          "columns": [
+            {
+              "expression": "order_leg_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_fill_legs_instrument_created_idx": {
+          "name": "trading_fill_legs_instrument_created_idx",
+          "columns": [
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_fill_legs_fill_id_trading_fills_id_fk": {
+          "name": "trading_fill_legs_fill_id_trading_fills_id_fk",
+          "tableFrom": "trading_fill_legs",
+          "tableTo": "trading_fills",
+          "columnsFrom": [
+            "fill_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trading_fill_legs_order_leg_id_trading_order_legs_id_fk": {
+          "name": "trading_fill_legs_order_leg_id_trading_order_legs_id_fk",
+          "tableFrom": "trading_fill_legs",
+          "tableTo": "trading_order_legs",
+          "columnsFrom": [
+            "order_leg_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "trading_fill_legs_instrument_id_trading_instruments_id_fk": {
+          "name": "trading_fill_legs_instrument_id_trading_instruments_id_fk",
+          "tableFrom": "trading_fill_legs",
+          "tableTo": "trading_instruments",
+          "columnsFrom": [
+            "instrument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_fill_legs_amount_check": {
+          "name": "trading_fill_legs_amount_check",
+          "value": "\"trading_fill_legs\".\"quantity\" > 0 and \"trading_fill_legs\".\"price\" > 0 and \"trading_fill_legs\".\"multiplier\" > 0 and \"trading_fill_legs\".\"gross_amount\" > 0 and \"trading_fill_legs\".\"fees\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_fills": {
+      "name": "trading_fills",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "strategy_quantity": {
+          "name": "strategy_quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_data_mode": {
+          "name": "market_data_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_event_kind": {
+          "name": "source_event_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_timestamp": {
+          "name": "source_timestamp",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_sequence": {
+          "name": "source_sequence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "execution_model_version": {
+          "name": "execution_model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_fills_order_created_idx": {
+          "name": "trading_fills_order_created_idx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_fills_portfolio_created_idx": {
+          "name": "trading_fills_portfolio_created_idx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_fills_order_id_trading_orders_id_fk": {
+          "name": "trading_fills_order_id_trading_orders_id_fk",
+          "tableFrom": "trading_fills",
+          "tableTo": "trading_orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "trading_fills_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_fills_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_fills",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "trading_fills_order_source_uidx": {
+          "name": "trading_fills_order_source_uidx",
+          "nullsNotDistinct": true,
+          "columns": [
+            "order_id",
+            "source_event_kind",
+            "source_timestamp",
+            "source_sequence"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "trading_fills_quantity_check": {
+          "name": "trading_fills_quantity_check",
+          "value": "\"trading_fills\".\"strategy_quantity\" > 0"
+        },
+        "trading_fills_mode_check": {
+          "name": "trading_fills_mode_check",
+          "value": "\"trading_fills\".\"market_data_mode\" in ('realtime', 'delayed')"
+        },
+        "trading_fills_event_kind_check": {
+          "name": "trading_fills_event_kind_check",
+          "value": "\"trading_fills\".\"source_event_kind\" in ('quote', 'trade', 'bar')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_instruments": {
+      "name": "trading_instruments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asset_class": {
+          "name": "asset_class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD'"
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "primary_exchange": {
+          "name": "primary_exchange",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ticker_type": {
+          "name": "ticker_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "round_lot": {
+          "name": "round_lot",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "underlying_symbol": {
+          "name": "underlying_symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "option_type": {
+          "name": "option_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "exercise_style": {
+          "name": "exercise_style",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expiration_date": {
+          "name": "expiration_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "strike_price": {
+          "name": "strike_price",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contract_multiplier": {
+          "name": "contract_multiplier",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "additional_underlyings": {
+          "name": "additional_underlyings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "source_updated_at": {
+          "name": "source_updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_instruments_symbol_uidx": {
+          "name": "trading_instruments_symbol_uidx",
+          "columns": [
+            {
+              "expression": "symbol",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_instruments_underlying_expiry_idx": {
+          "name": "trading_instruments_underlying_expiry_idx",
+          "columns": [
+            {
+              "expression": "underlying_symbol",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expiration_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_instruments_asset_class_check": {
+          "name": "trading_instruments_asset_class_check",
+          "value": "\"trading_instruments\".\"asset_class\" in ('stocks', 'options')"
+        },
+        "trading_instruments_currency_check": {
+          "name": "trading_instruments_currency_check",
+          "value": "\"trading_instruments\".\"currency\" = 'USD'"
+        },
+        "trading_instruments_symbol_length_check": {
+          "name": "trading_instruments_symbol_length_check",
+          "value": "length(\"trading_instruments\".\"symbol\") between 1 and 64"
+        },
+        "trading_instruments_shape_check": {
+          "name": "trading_instruments_shape_check",
+          "value": "(\n\t\t\t\t\"trading_instruments\".\"asset_class\" = 'stocks'\n\t\t\t\tand \"trading_instruments\".\"round_lot\" > 0\n\t\t\t\tand \"trading_instruments\".\"underlying_symbol\" is null\n\t\t\t\tand \"trading_instruments\".\"option_type\" is null\n\t\t\t\tand \"trading_instruments\".\"expiration_date\" is null\n\t\t\t\tand \"trading_instruments\".\"strike_price\" is null\n\t\t\t\tand \"trading_instruments\".\"contract_multiplier\" is null\n\t\t\t) or (\n\t\t\t\t\"trading_instruments\".\"asset_class\" = 'options'\n\t\t\t\tand \"trading_instruments\".\"underlying_symbol\" is not null\n\t\t\t\tand \"trading_instruments\".\"option_type\" in ('call', 'put')\n\t\t\t\tand \"trading_instruments\".\"exercise_style\" in ('american', 'bermudan', 'european')\n\t\t\t\tand \"trading_instruments\".\"expiration_date\" is not null\n\t\t\t\tand \"trading_instruments\".\"strike_price\" >= 0\n\t\t\t\tand \"trading_instruments\".\"contract_multiplier\" > 0\n\t\t\t)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_journal_entries": {
+      "name": "trading_journal_entries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instrument_id": {
+          "name": "instrument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phase": {
+          "name": "phase",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thesis": {
+          "name": "thesis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invalidation": {
+          "name": "invalidation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "followed_plan": {
+          "name": "followed_plan",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_journal_entries_portfolio_created_idx": {
+          "name": "trading_journal_entries_portfolio_created_idx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_journal_entries_instrument_idx": {
+          "name": "trading_journal_entries_instrument_idx",
+          "columns": [
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_journal_entries_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_journal_entries_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_journal_entries",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trading_journal_entries_instrument_id_trading_instruments_id_fk": {
+          "name": "trading_journal_entries_instrument_id_trading_instruments_id_fk",
+          "tableFrom": "trading_journal_entries",
+          "tableTo": "trading_instruments",
+          "columnsFrom": [
+            "instrument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_journal_entries_phase_check": {
+          "name": "trading_journal_entries_phase_check",
+          "value": "\"trading_journal_entries\".\"phase\" in ('pre_trade', 'post_trade', 'general')"
+        },
+        "trading_journal_entries_symbol_length_check": {
+          "name": "trading_journal_entries_symbol_length_check",
+          "value": "\"trading_journal_entries\".\"symbol\" is null or length(btrim(\"trading_journal_entries\".\"symbol\")) between 1 and 20"
+        },
+        "trading_journal_entries_thesis_length_check": {
+          "name": "trading_journal_entries_thesis_length_check",
+          "value": "\"trading_journal_entries\".\"thesis\" is null or length(\"trading_journal_entries\".\"thesis\") <= 4000"
+        },
+        "trading_journal_entries_invalidation_length_check": {
+          "name": "trading_journal_entries_invalidation_length_check",
+          "value": "\"trading_journal_entries\".\"invalidation\" is null or length(\"trading_journal_entries\".\"invalidation\") <= 1000"
+        },
+        "trading_journal_entries_notes_length_check": {
+          "name": "trading_journal_entries_notes_length_check",
+          "value": "length(btrim(\"trading_journal_entries\".\"notes\")) between 1 and 10000"
+        },
+        "trading_journal_entries_tags_check": {
+          "name": "trading_journal_entries_tags_check",
+          "value": "cardinality(\"trading_journal_entries\".\"tags\") <= 12"
+        },
+        "trading_journal_entries_confidence_check": {
+          "name": "trading_journal_entries_confidence_check",
+          "value": "\"trading_journal_entries\".\"confidence\" is null or \"trading_journal_entries\".\"confidence\" between 1 and 5"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_order_events": {
+      "name": "trading_order_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_status": {
+          "name": "from_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_status": {
+          "name": "to_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_order_events_order_occurred_idx": {
+          "name": "trading_order_events_order_occurred_idx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_order_events_order_id_trading_orders_id_fk": {
+          "name": "trading_order_events_order_id_trading_orders_id_fk",
+          "tableFrom": "trading_order_events",
+          "tableTo": "trading_orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_order_events_to_status_check": {
+          "name": "trading_order_events_to_status_check",
+          "value": "\"trading_order_events\".\"to_status\" in ('pending_new', 'open', 'partially_filled', 'filled', 'canceled', 'expired', 'rejected')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_order_legs": {
+      "name": "trading_order_legs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instrument_id": {
+          "name": "instrument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leg_number": {
+          "name": "leg_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position_effect": {
+          "name": "position_effect",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ratio_quantity": {
+          "name": "ratio_quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filled_quantity": {
+          "name": "filled_quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        }
+      },
+      "indexes": {
+        "trading_order_legs_order_number_uidx": {
+          "name": "trading_order_legs_order_number_uidx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "leg_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_order_legs_order_instrument_uidx": {
+          "name": "trading_order_legs_order_instrument_uidx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_order_legs_instrument_idx": {
+          "name": "trading_order_legs_instrument_idx",
+          "columns": [
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_order_legs_order_id_trading_orders_id_fk": {
+          "name": "trading_order_legs_order_id_trading_orders_id_fk",
+          "tableFrom": "trading_order_legs",
+          "tableTo": "trading_orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trading_order_legs_instrument_id_trading_instruments_id_fk": {
+          "name": "trading_order_legs_instrument_id_trading_instruments_id_fk",
+          "tableFrom": "trading_order_legs",
+          "tableTo": "trading_instruments",
+          "columnsFrom": [
+            "instrument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_order_legs_number_check": {
+          "name": "trading_order_legs_number_check",
+          "value": "\"trading_order_legs\".\"leg_number\" between 1 and 4"
+        },
+        "trading_order_legs_side_check": {
+          "name": "trading_order_legs_side_check",
+          "value": "\"trading_order_legs\".\"side\" in ('buy', 'sell')"
+        },
+        "trading_order_legs_position_effect_check": {
+          "name": "trading_order_legs_position_effect_check",
+          "value": "\"trading_order_legs\".\"position_effect\" in ('open', 'close')"
+        },
+        "trading_order_legs_quantity_check": {
+          "name": "trading_order_legs_quantity_check",
+          "value": "\"trading_order_legs\".\"ratio_quantity\" > 0 and \"trading_order_legs\".\"filled_quantity\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_orders": {
+      "name": "trading_orders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trade_plan_id": {
+          "name": "trade_plan_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client_order_id": {
+          "name": "client_order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order_type": {
+          "name": "order_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "time_in_force": {
+          "name": "time_in_force",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "net_price_effect": {
+          "name": "net_price_effect",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'debit'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filled_quantity": {
+          "name": "filled_quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "limit_price": {
+          "name": "limit_price",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stop_price": {
+          "name": "stop_price",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trailing_percent": {
+          "name": "trailing_percent",
+          "type": "numeric(10, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trailing_watermark": {
+          "name": "trailing_watermark",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trailing_stop_price": {
+          "name": "trailing_stop_price",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "extended_hours": {
+          "name": "extended_hours",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "execution_model_version": {
+          "name": "execution_model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eligible_at": {
+          "name": "eligible_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "triggered_at": {
+          "name": "triggered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "terminal_at": {
+          "name": "terminal_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejection_reason": {
+          "name": "rejection_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_orders_portfolio_client_order_uidx": {
+          "name": "trading_orders_portfolio_client_order_uidx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "client_order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_orders_portfolio_status_created_idx": {
+          "name": "trading_orders_portfolio_status_created_idx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_orders_trade_plan_idx": {
+          "name": "trading_orders_trade_plan_idx",
+          "columns": [
+            {
+              "expression": "trade_plan_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_orders_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_orders_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_orders",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "trading_orders_trade_plan_id_trading_journal_entries_id_fk": {
+          "name": "trading_orders_trade_plan_id_trading_journal_entries_id_fk",
+          "tableFrom": "trading_orders",
+          "tableTo": "trading_journal_entries",
+          "columnsFrom": [
+            "trade_plan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_orders_type_check": {
+          "name": "trading_orders_type_check",
+          "value": "\"trading_orders\".\"order_type\" in ('market', 'limit', 'stop', 'stop_limit', 'trailing_stop')"
+        },
+        "trading_orders_tif_check": {
+          "name": "trading_orders_tif_check",
+          "value": "\"trading_orders\".\"time_in_force\" in ('day', 'gtc', 'ioc')"
+        },
+        "trading_orders_net_effect_check": {
+          "name": "trading_orders_net_effect_check",
+          "value": "\"trading_orders\".\"net_price_effect\" in ('debit', 'credit')"
+        },
+        "trading_orders_status_check": {
+          "name": "trading_orders_status_check",
+          "value": "\"trading_orders\".\"status\" in ('pending_new', 'open', 'partially_filled', 'filled', 'canceled', 'expired', 'rejected')"
+        },
+        "trading_orders_quantity_check": {
+          "name": "trading_orders_quantity_check",
+          "value": "\"trading_orders\".\"quantity\" > 0 and \"trading_orders\".\"filled_quantity\" >= 0 and \"trading_orders\".\"filled_quantity\" <= \"trading_orders\".\"quantity\""
+        },
+        "trading_orders_price_shape_check": {
+          "name": "trading_orders_price_shape_check",
+          "value": "(\n\t\t\t\t\"trading_orders\".\"order_type\" = 'market'\n\t\t\t\tand \"trading_orders\".\"limit_price\" is null\n\t\t\t\tand \"trading_orders\".\"stop_price\" is null\n\t\t\t\tand \"trading_orders\".\"trailing_percent\" is null\n\t\t\t) or (\n\t\t\t\t\"trading_orders\".\"order_type\" = 'limit' and \"trading_orders\".\"limit_price\" > 0\n\t\t\t) or (\n\t\t\t\t\"trading_orders\".\"order_type\" = 'stop' and \"trading_orders\".\"stop_price\" > 0\n\t\t\t) or (\n\t\t\t\t\"trading_orders\".\"order_type\" = 'stop_limit' and \"trading_orders\".\"stop_price\" > 0 and \"trading_orders\".\"limit_price\" > 0\n\t\t\t) or (\n\t\t\t\t\"trading_orders\".\"order_type\" = 'trailing_stop' and \"trading_orders\".\"trailing_percent\" > 0 and \"trading_orders\".\"trailing_percent\" <= 100\n\t\t\t)"
+        },
+        "trading_orders_terminal_check": {
+          "name": "trading_orders_terminal_check",
+          "value": "(\"trading_orders\".\"status\" in ('filled', 'canceled', 'expired', 'rejected')) = (\"trading_orders\".\"terminal_at\" is not null)"
+        },
+        "trading_orders_trailing_state_check": {
+          "name": "trading_orders_trailing_state_check",
+          "value": "(\"trading_orders\".\"trailing_watermark\" is null and \"trading_orders\".\"trailing_stop_price\" is null) or (\"trading_orders\".\"order_type\" = 'trailing_stop' and \"trading_orders\".\"trailing_watermark\" > 0 and \"trading_orders\".\"trailing_stop_price\" > 0)"
+        },
+        "trading_orders_revision_check": {
+          "name": "trading_orders_revision_check",
+          "value": "\"trading_orders\".\"revision\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_portfolio_policies": {
+      "name": "trading_portfolio_policies",
+      "schema": "",
+      "columns": {
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "benchmark_symbol": {
+          "name": "benchmark_symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'SPY'"
+        },
+        "account_type": {
+          "name": "account_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'cash'"
+        },
+        "allow_short_equity": {
+          "name": "allow_short_equity",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "allow_long_options": {
+          "name": "allow_long_options",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "allow_covered_options": {
+          "name": "allow_covered_options",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "allow_defined_risk_spreads": {
+          "name": "allow_defined_risk_spreads",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "allow_extended_hours": {
+          "name": "allow_extended_hours",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "require_trade_plan": {
+          "name": "require_trade_plan",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "max_order_notional": {
+          "name": "max_order_notional",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_position_percent": {
+          "name": "max_position_percent",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_gross_exposure_percent": {
+          "name": "max_gross_exposure_percent",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_daily_loss": {
+          "name": "max_daily_loss",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_drawdown_percent": {
+          "name": "max_drawdown_percent",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_option_premium": {
+          "name": "max_option_premium",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "risk_behavior": {
+          "name": "risk_behavior",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'block'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "trading_portfolio_policies_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_portfolio_policies_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_portfolio_policies",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_portfolio_policies_benchmark_check": {
+          "name": "trading_portfolio_policies_benchmark_check",
+          "value": "\"trading_portfolio_policies\".\"benchmark_symbol\" ~ '^[A-Z][A-Z0-9.]{0,9}$'"
+        },
+        "trading_portfolio_policies_account_type_check": {
+          "name": "trading_portfolio_policies_account_type_check",
+          "value": "\"trading_portfolio_policies\".\"account_type\" in ('cash', 'margin')"
+        },
+        "trading_portfolio_policies_permissions_check": {
+          "name": "trading_portfolio_policies_permissions_check",
+          "value": "not (\"trading_portfolio_policies\".\"account_type\" = 'cash' and \"trading_portfolio_policies\".\"allow_short_equity\")\n\t\t\t\tand not (\"trading_portfolio_policies\".\"allow_defined_risk_spreads\" and not \"trading_portfolio_policies\".\"allow_long_options\")"
+        },
+        "trading_portfolio_policies_order_notional_check": {
+          "name": "trading_portfolio_policies_order_notional_check",
+          "value": "\"trading_portfolio_policies\".\"max_order_notional\" is null or \"trading_portfolio_policies\".\"max_order_notional\" > 0"
+        },
+        "trading_portfolio_policies_position_percent_check": {
+          "name": "trading_portfolio_policies_position_percent_check",
+          "value": "\"trading_portfolio_policies\".\"max_position_percent\" is null or \"trading_portfolio_policies\".\"max_position_percent\" > 0 and \"trading_portfolio_policies\".\"max_position_percent\" <= 100"
+        },
+        "trading_portfolio_policies_gross_percent_check": {
+          "name": "trading_portfolio_policies_gross_percent_check",
+          "value": "\"trading_portfolio_policies\".\"max_gross_exposure_percent\" is null or \"trading_portfolio_policies\".\"max_gross_exposure_percent\" > 0 and \"trading_portfolio_policies\".\"max_gross_exposure_percent\" <= 100"
+        },
+        "trading_portfolio_policies_daily_loss_check": {
+          "name": "trading_portfolio_policies_daily_loss_check",
+          "value": "\"trading_portfolio_policies\".\"max_daily_loss\" is null or \"trading_portfolio_policies\".\"max_daily_loss\" > 0"
+        },
+        "trading_portfolio_policies_drawdown_percent_check": {
+          "name": "trading_portfolio_policies_drawdown_percent_check",
+          "value": "\"trading_portfolio_policies\".\"max_drawdown_percent\" is null or \"trading_portfolio_policies\".\"max_drawdown_percent\" > 0 and \"trading_portfolio_policies\".\"max_drawdown_percent\" <= 100"
+        },
+        "trading_portfolio_policies_option_premium_check": {
+          "name": "trading_portfolio_policies_option_premium_check",
+          "value": "\"trading_portfolio_policies\".\"max_option_premium\" is null or \"trading_portfolio_policies\".\"max_option_premium\" > 0"
+        },
+        "trading_portfolio_policies_risk_behavior_check": {
+          "name": "trading_portfolio_policies_risk_behavior_check",
+          "value": "\"trading_portfolio_policies\".\"risk_behavior\" in ('warn', 'block')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_portfolios": {
+      "name": "trading_portfolios",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_currency": {
+          "name": "base_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD'"
+        },
+        "starting_cash": {
+          "name": "starting_cash",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_mode": {
+          "name": "data_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_model_version": {
+          "name": "execution_model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "risk_model_version": {
+          "name": "risk_model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "trading_portfolios_owner_status_idx": {
+          "name": "trading_portfolios_owner_status_idx",
+          "columns": [
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_portfolios_owner_user_id_app_users_id_fk": {
+          "name": "trading_portfolios_owner_user_id_app_users_id_fk",
+          "tableFrom": "trading_portfolios",
+          "tableTo": "app_users",
+          "columnsFrom": [
+            "owner_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_portfolios_name_length_check": {
+          "name": "trading_portfolios_name_length_check",
+          "value": "length(btrim(\"trading_portfolios\".\"name\")) between 1 and 48"
+        },
+        "trading_portfolios_currency_check": {
+          "name": "trading_portfolios_currency_check",
+          "value": "\"trading_portfolios\".\"base_currency\" = 'USD'"
+        },
+        "trading_portfolios_starting_cash_check": {
+          "name": "trading_portfolios_starting_cash_check",
+          "value": "\"trading_portfolios\".\"starting_cash\" between 1000 and 100000000"
+        },
+        "trading_portfolios_data_mode_check": {
+          "name": "trading_portfolios_data_mode_check",
+          "value": "\"trading_portfolios\".\"data_mode\" = 'realtime'"
+        },
+        "trading_portfolios_status_check": {
+          "name": "trading_portfolios_status_check",
+          "value": "\"trading_portfolios\".\"status\" in ('active', 'archived')"
+        },
+        "trading_portfolios_archive_check": {
+          "name": "trading_portfolios_archive_check",
+          "value": "(\"trading_portfolios\".\"status\" = 'active' and \"trading_portfolios\".\"archived_at\" is null) or (\"trading_portfolios\".\"status\" = 'archived' and \"trading_portfolios\".\"archived_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_positions": {
+      "name": "trading_positions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instrument_id": {
+          "name": "instrument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "average_cost": {
+          "name": "average_cost",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "realized_pnl": {
+          "name": "realized_pnl",
+          "type": "numeric(24, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_positions_portfolio_instrument_uidx": {
+          "name": "trading_positions_portfolio_instrument_uidx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_positions_instrument_idx": {
+          "name": "trading_positions_instrument_idx",
+          "columns": [
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_positions_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_positions_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_positions",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "trading_positions_instrument_id_trading_instruments_id_fk": {
+          "name": "trading_positions_instrument_id_trading_instruments_id_fk",
+          "tableFrom": "trading_positions",
+          "tableTo": "trading_instruments",
+          "columnsFrom": [
+            "instrument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_positions_average_cost_check": {
+          "name": "trading_positions_average_cost_check",
+          "value": "\"trading_positions\".\"average_cost\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_reservations": {
+      "name": "trading_reservations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instrument_id": {
+          "name": "instrument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reservation_type": {
+          "name": "reservation_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(28, 8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "released_at": {
+          "name": "released_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "trading_reservations_order_status_idx": {
+          "name": "trading_reservations_order_status_idx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_reservations_portfolio_status_idx": {
+          "name": "trading_reservations_portfolio_status_idx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_reservations_instrument_idx": {
+          "name": "trading_reservations_instrument_idx",
+          "columns": [
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_reservations_order_id_trading_orders_id_fk": {
+          "name": "trading_reservations_order_id_trading_orders_id_fk",
+          "tableFrom": "trading_reservations",
+          "tableTo": "trading_orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trading_reservations_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_reservations_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_reservations",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "trading_reservations_instrument_id_trading_instruments_id_fk": {
+          "name": "trading_reservations_instrument_id_trading_instruments_id_fk",
+          "tableFrom": "trading_reservations",
+          "tableTo": "trading_instruments",
+          "columnsFrom": [
+            "instrument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_reservations_type_check": {
+          "name": "trading_reservations_type_check",
+          "value": "\"trading_reservations\".\"reservation_type\" in ('cash', 'shares', 'buying_power')"
+        },
+        "trading_reservations_amount_check": {
+          "name": "trading_reservations_amount_check",
+          "value": "\"trading_reservations\".\"amount\" > 0"
+        },
+        "trading_reservations_status_check": {
+          "name": "trading_reservations_status_check",
+          "value": "\"trading_reservations\".\"status\" in ('active', 'released', 'consumed')"
+        },
+        "trading_reservations_release_check": {
+          "name": "trading_reservations_release_check",
+          "value": "(\"trading_reservations\".\"status\" = 'active' and \"trading_reservations\".\"released_at\" is null) or (\"trading_reservations\".\"status\" <> 'active' and \"trading_reservations\".\"released_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trading_watchlist_items": {
+      "name": "trading_watchlist_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "watchlist_id": {
+          "name": "watchlist_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instrument_id": {
+          "name": "instrument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_watchlist_items_watchlist_instrument_uidx": {
+          "name": "trading_watchlist_items_watchlist_instrument_uidx",
+          "columns": [
+            {
+              "expression": "watchlist_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "trading_watchlist_items_instrument_idx": {
+          "name": "trading_watchlist_items_instrument_idx",
+          "columns": [
+            {
+              "expression": "instrument_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_watchlist_items_watchlist_id_trading_watchlists_id_fk": {
+          "name": "trading_watchlist_items_watchlist_id_trading_watchlists_id_fk",
+          "tableFrom": "trading_watchlist_items",
+          "tableTo": "trading_watchlists",
+          "columnsFrom": [
+            "watchlist_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trading_watchlist_items_instrument_id_trading_instruments_id_fk": {
+          "name": "trading_watchlist_items_instrument_id_trading_instruments_id_fk",
+          "tableFrom": "trading_watchlist_items",
+          "tableTo": "trading_instruments",
+          "columnsFrom": [
+            "instrument_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.trading_watchlists": {
+      "name": "trading_watchlists",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "portfolio_id": {
+          "name": "portfolio_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Watchlist'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trading_watchlists_portfolio_name_uidx": {
+          "name": "trading_watchlists_portfolio_name_uidx",
+          "columns": [
+            {
+              "expression": "portfolio_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trading_watchlists_portfolio_id_trading_portfolios_id_fk": {
+          "name": "trading_watchlists_portfolio_id_trading_portfolios_id_fk",
+          "tableFrom": "trading_watchlists",
+          "tableTo": "trading_portfolios",
+          "columnsFrom": [
+            "portfolio_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "trading_watchlists_name_length_check": {
+          "name": "trading_watchlists_name_length_check",
+          "value": "length(btrim(\"trading_watchlists\".\"name\")) between 1 and 48"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

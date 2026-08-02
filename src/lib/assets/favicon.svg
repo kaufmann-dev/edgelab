@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter">
+  <style>
+    svg { stroke: #000000; }
+    @media (prefers-color-scheme: dark) { svg { stroke: #ffffff; } }
+  </style>
+  <title>EdgeLab</title>
+  <path d="M8 50 22 36l10 8 17-25 7 7" />
+  <path d="M14 13v20M10 20h8M31 18v17M27 29h8M48 8v20M44 14h8" />
+</svg>

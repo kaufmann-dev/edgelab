@@ -1,0 +1,59 @@
+{
+	"version": 1,
+	"skills": {
+		"better-auth-best-practices": {
+			"source": "better-auth/skills",
+			"sourceType": "github",
+			"skillPath": "better-auth/best-practices/SKILL.md",
+			"computedHash": "9ab075b5061be2a5f299c10505667345cc1ec76e8de4120901cfd586643e776f"
+		},
+		"drizzle-orm-patterns": {
+			"source": "giuseppe-trisciuoglio/developer-kit",
+			"sourceType": "github",
+			"skillPath": "plugins/developer-kit-typescript/skills/drizzle-orm-patterns/SKILL.md",
+			"computedHash": "6c84a25a50ebc3860cd348089e3b163c4e0fc08d9c3932976b81917d5163c6a5"
+		},
+		"email-best-practices": {
+			"source": "resend/email-best-practices",
+			"sourceType": "github",
+			"skillPath": "SKILL.md",
+			"computedHash": "8eddb5aabeb9b5a0d399fceb95b07a4691e0abf7a848f755735176197d3f49b8"
+		},
+		"playwright-cli": {
+			"source": "microsoft/playwright-cli",
+			"sourceType": "github",
+			"skillPath": "skills/playwright-cli/SKILL.md",
+			"computedHash": "cc5d9f0cc5760217829fbebfa05a23b4ab475ed34005a9ea44e181b8112409f3"
+		},
+		"postgresql-table-design": {
+			"source": "wshobson/agents",
+			"sourceType": "github",
+			"skillPath": "plugins/database-design/skills/postgresql/SKILL.md",
+			"computedHash": "d7d040ee506a300c08a64b9ef6de9aa677b6d7251e33c3c87e0608f821a9506d"
+		},
+		"shadcn-svelte": {
+			"source": "vercel-labs/json-render",
+			"sourceType": "github",
+			"skillPath": "skills/shadcn-svelte/SKILL.md",
+			"computedHash": "fcb9b65f29baf8a2e03960d37bceff6a71203aeb962105cf6f78c697c71efc3c"
+		},
+		"tailwind-design-system": {
+			"source": "wshobson/agents",
+			"sourceType": "github",
+			"skillPath": "plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md",
+			"computedHash": "f54f39ce967af3a4bba1f662c3600f0253467508d5fbbc7c545c67e102da2253"
+		},
+		"vitest": {
+			"source": "antfu/skills",
+			"sourceType": "github",
+			"skillPath": "skills/vitest/SKILL.md",
+			"computedHash": "0efd9cf8c56aada060d418d009cfe621a7915d0c73a958fe611985bc0c2fa4b8"
+		},
+		"zod": {
+			"source": "pproenca/dot-skills",
+			"sourceType": "github",
+			"skillPath": "skills/.curated/zod/SKILL.md",
+			"computedHash": "e15dbf6f7f4f81616843cf855cbc984ad301455c7e298d7820c02fb3280e16f3"
+		}
+	}
+}

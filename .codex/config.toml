@@ -1,0 +1,23 @@
+[mcp_servers.svelte]
+url = "https://mcp.svelte.dev/mcp"
+enabled = true
+
+[mcp_servers.playwright]
+command = "pnpm"
+args = ["dlx", "@playwright/mcp@latest", "--browser", "chromium"]
+enabled = false
+
+[mcp_servers.postgres]
+command = "pnpm"
+args = ["dlx", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+enabled = false
+
+[mcp_servers.resend]
+command = "pnpm"
+args = ["dlx", "resend-mcp"]
+env = { RESEND_API_KEY = "${RESEND_API_KEY}" }
+enabled = false
+
+[mcp_servers.glitchtip]
+url = "${GLITCHTIP_MCP_URL}"
+enabled = false
