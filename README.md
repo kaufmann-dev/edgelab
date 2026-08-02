@@ -157,7 +157,7 @@ Configure the application in Coolify with these UI values:
 
 - **Build Pack:** Nixpacks.
 - **Base Directory:** `/`.
-- **Pre-Deployment Command:** `./node_modules/.bin/drizzle-kit migrate`.
+- **Pre/Post Deployment Commands:** leave both empty; the image start command applies migrations.
 - **Health Check Path:** `/healthz`; it returns `503` when PostgreSQL is unavailable.
 - **Replicas:** exactly `1`, because Massive WebSocket fan-out is process-local.
 - **Database:** attach a persistent PostgreSQL resource and use its internal connection URL.
@@ -170,7 +170,9 @@ origin, and register its `/auth/callback` and `/auth/logout/callback` URLs with 
 The repository's `nixpacks.toml` works around the generated Nixpacks plan's obsolete Corepack by
 running the pinned pnpm 11.18.0 explicitly during install and build. Node 24 remains pinned only in
 `package.json`; use a full-ICU Node build rather than a custom small-ICU build. The adapter-node
-server reads Coolify's injected `PORT` at runtime.
+start command applies every committed Drizzle migration before starting the server, then the server
+reads Coolify's injected `PORT` at runtime. Do not duplicate migrations in Coolify's pre-deployment
+command: that hook targets the previous container and is skipped when no prior container exists.
 
 The live matcher starts with the server and does not require an open browser. Browser market streams
 are authenticated, resource-capped, and reconnect at least once per minute so session expiry and

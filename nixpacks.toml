@@ -5,4 +5,4 @@ cmds = ["npx --yes pnpm@11.18.0 install --frozen-lockfile"]
 cmds = ["npx --yes pnpm@11.18.0 run build"]
 
 [start]
-cmd = "node build"
+cmd = "./node_modules/.bin/drizzle-kit migrate && node build"
