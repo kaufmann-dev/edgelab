@@ -11,7 +11,7 @@
 	import NotebookPenIcon from '@lucide/svelte/icons/notebook-pen';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import WalletCardsIcon from '@lucide/svelte/icons/wallet-cards';
-	import { resolve } from '$app/paths';
+	import { asset, resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { AppHeaderActions } from '$lib/components/app/index.js';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
@@ -21,7 +21,6 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import type { LayoutProps } from './$types';
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
 
 	interface PortfolioContext {
 		id: string;
@@ -151,7 +150,7 @@
 	});
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head><link rel="icon" href={asset('/favicon.svg')} /></svelte:head>
 
 {#if data.user}
 	<ModeWatcher disableTransitions />
