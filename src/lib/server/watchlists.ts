@@ -1,19 +1,19 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db/index.js';
 import {
 	tradingInstruments,
 	tradingPortfolios,
 	tradingWatchlistItems,
 	tradingWatchlists
-} from '$lib/server/db/schema/trading';
-import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
-import { MassiveHttpError, type MarketDataRestProvider } from '$lib/server/market-data';
-import type { SnapshotFieldAccess } from '$lib/server/market-view';
-import { instrumentInsertValues } from '$lib/server/trading/drizzle-repository';
+} from '#lib/server/db/schema/trading.js';
+import { getMarketDataProvider, getMarketEnvironment } from '#lib/server/market.js';
+import { MassiveHttpError, type MarketDataRestProvider } from '#lib/server/market-data/index.js';
+import type { SnapshotFieldAccess } from '#lib/server/market-view.js';
+import { instrumentInsertValues } from '#lib/server/trading/drizzle-repository.js';
 import {
 	hydrateWatchlistSnapshots,
 	type WatchlistMarketClock
-} from '$lib/server/watchlist-market-data';
+} from '#lib/server/watchlist-market-data.js';
 import { unavailableWatchlistRows, type SavedWatchlistRow } from './watchlists.logic';
 
 export {

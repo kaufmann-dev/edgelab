@@ -46,7 +46,8 @@ The core configuration is required at runtime:
 
 - `DATABASE_URL` is a PostgreSQL connection URL.
 - `ORIGIN` is EdgeLab's canonical origin. Use HTTPS in production; only localhost development may
-  use HTTP. Do not include a path, query, fragment, or credentials.
+  use HTTP. Do not include a path, query, fragment, or credentials. It must also be set at build
+  time, where it becomes SvelteKit's `paths.origin` for CSRF checks behind the reverse proxy.
 - `OIDC_ISSUER_URL` is the provider's discovery issuer URL.
 - `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` identify a confidential OIDC client.
 - `OIDC_DATA_ENCRYPTION_KEY` is a base64-encoded, exactly 32-byte key used to encrypt sensitive
@@ -165,7 +166,8 @@ Configure the application in Coolify with these UI values:
 Set every uncommented variable from `.env.example` in Coolify. Add `MASSIVE_OPTIONS_PLAN` only
 when that key has an Options plan. Treat `DATABASE_URL`, `OIDC_CLIENT_SECRET`,
 `OIDC_DATA_ENCRYPTION_KEY`, and `MASSIVE_API_KEY` as secrets. Set `ORIGIN` to the public HTTPS
-origin, and register its `/auth/callback` and `/auth/logout/callback` URLs with the OIDC provider.
+origin and keep it available at build time (Coolify's default), and register its `/auth/callback`
+and `/auth/logout/callback` URLs with the OIDC provider.
 
 The repository's `nixpacks.toml` works around the generated Nixpacks plan's obsolete Corepack by
 running the pinned pnpm 11.18.0 explicitly during install and build. Node 24 remains pinned only in

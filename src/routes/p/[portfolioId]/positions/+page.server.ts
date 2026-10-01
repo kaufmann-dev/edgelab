@@ -5,8 +5,8 @@ import {
 	listPortfolioPositions,
 	recordPortfolioEquitySnapshot,
 	requirePortfolioReadAccess
-} from '$lib/server/portfolio-read';
-import { buildPositionView } from '$lib/server/portfolio-view';
+} from '#lib/server/portfolio-read.js';
+import { buildPositionView } from '#lib/server/portfolio-view.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {

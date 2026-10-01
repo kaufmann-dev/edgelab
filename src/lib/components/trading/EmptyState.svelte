@@ -1,6 +1,6 @@
 <script lang="ts">
 	import CircleSlashIcon from '@lucide/svelte/icons/circle-slash';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import type { TradingIcon } from './types.js';
 
 	interface Props {

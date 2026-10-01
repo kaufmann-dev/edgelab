@@ -1,12 +1,12 @@
 import type { RequestHandler } from './$types';
-import { OIDC_FLOW_COOKIE_NAME } from '$lib/server/auth/constants';
-import { setOidcFlowCookie } from '$lib/server/auth/cookies';
-import { getAuthEnvironment } from '$lib/server/auth/environment';
-import { abandonLoginFlow, startLoginFlow } from '$lib/server/auth/flow';
-import { LoginRateLimitError } from '$lib/server/auth/login-rate-limit';
-import { LoginFlowCapacityError } from '$lib/server/auth/repository';
-import { redirectNoStore } from '$lib/server/auth/responses';
-import { safeReturnTo } from '$lib/server/auth/validation';
+import { OIDC_FLOW_COOKIE_NAME } from '#lib/server/auth/constants.js';
+import { setOidcFlowCookie } from '#lib/server/auth/cookies.js';
+import { getAuthEnvironment } from '#lib/server/auth/environment.js';
+import { abandonLoginFlow, startLoginFlow } from '#lib/server/auth/flow.js';
+import { LoginRateLimitError } from '#lib/server/auth/login-rate-limit.js';
+import { LoginFlowCapacityError } from '#lib/server/auth/repository.js';
+import { redirectNoStore } from '#lib/server/auth/responses.js';
+import { safeReturnTo } from '#lib/server/auth/validation.js';
 
 export const GET: RequestHandler = async ({ cookies, locals, url }) => {
 	const environment = getAuthEnvironment();

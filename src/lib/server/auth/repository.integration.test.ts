@@ -1,12 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { authSessions, users } from '$lib/server/db/schema/auth';
+import { authSessions, users } from '#lib/server/db/schema/auth.js';
 
 const describeDatabase = process.env.RUN_DATABASE_INTEGRATION === 'true' ? describe : describe.skip;
 
 describeDatabase('auth repository integration', () => {
 	it('encodes and caps session idle expiry timestamps', async () => {
-		const { db } = await import('$lib/server/db');
+		const { db } = await import('#lib/server/db/index.js');
 		const { touchAuthenticatedSession } = await import('./repository');
 		const now = new Date();
 		const candidateIdleExpiry = new Date(now.getTime() + 60 * 60 * 1_000);

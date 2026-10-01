@@ -4,14 +4,14 @@ import {
 	type AssetClass,
 	type NormalizedBar,
 	type OptionInstrument
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 import {
 	SIMULATION_EXECUTION_MODEL,
 	SIMULATION_FEE_MODEL,
 	calculateBarFill,
 	type AcceptedOrder,
 	type ExecutableBarContext
-} from '$lib/server/trading';
+} from '#lib/server/trading/index.js';
 import { describe, expect, it } from 'vitest';
 import {
 	hasAvailableCashForLiveFill,

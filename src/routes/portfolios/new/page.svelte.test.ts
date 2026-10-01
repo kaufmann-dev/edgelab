@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { defaults } from 'sveltekit-superforms';
 import { zod4Client } from 'sveltekit-superforms/adapters';
-import { createPortfolioSchema } from '$lib/domain/forms';
+import { createPortfolioSchema } from '#lib/domain/forms.js';
 import type { PageData } from './$types';
 import Page from './+page.svelte';
 

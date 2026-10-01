@@ -2,14 +2,14 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { superValidate } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import type { Actions, PageServerLoad } from './$types';
-import { createPortfolioSchema } from '$lib/domain/forms';
-import { getMarketEnvironment } from '$lib/server/market';
+import { createPortfolioSchema } from '#lib/domain/forms.js';
+import { getMarketEnvironment } from '#lib/server/market.js';
 import {
 	supportsOptionsExecution,
 	supportsStockSimulation,
 	type MarketDataMode
-} from '$lib/server/market-data';
-import { createOwnedPortfolio } from '$lib/server/portfolios/repository';
+} from '#lib/server/market-data/index.js';
+import { createOwnedPortfolio } from '#lib/server/portfolios/repository.js';
 
 const createPortfolioAdapter = zod4(createPortfolioSchema);
 

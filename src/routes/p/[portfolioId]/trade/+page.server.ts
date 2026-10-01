@@ -1,20 +1,23 @@
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
-import { completedSnapshotMinuteBar, loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
-import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
+import {
+	completedSnapshotMinuteBar,
+	loadLatestCompletedMinuteBar
+} from '#lib/server/market-bars.js';
+import { getMarketDataProvider, getMarketEnvironment } from '#lib/server/market.js';
 import {
 	MassiveHttpError,
 	supportsOptionsExecution,
 	type MarketSnapshot,
 	type NormalizedBar,
 	type OptionSnapshot
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 import {
 	getPortfolioBalances,
 	getPortfolioPolicy,
 	listPortfolioJournal,
 	requirePortfolioReadAccess
-} from '$lib/server/portfolio-read';
+} from '#lib/server/portfolio-read.js';
 import type { PageServerLoad } from './$types';
 
 const symbolSchema = z

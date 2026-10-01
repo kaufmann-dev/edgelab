@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ChartNoAxesCombinedIcon from '@lucide/svelte/icons/chart-no-axes-combined';
-	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import EmptyState from './EmptyState.svelte';
 	import type { EquityCurvePoint } from './types.js';
 

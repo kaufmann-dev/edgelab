@@ -1,5 +1,5 @@
-import type { MarketSnapshot, NormalizedBar } from '$lib/server/market-data';
-import { serializeSnapshot, type SnapshotFieldAccess } from '$lib/server/market-view';
+import type { MarketSnapshot, NormalizedBar } from '#lib/server/market-data/index.js';
+import { serializeSnapshot, type SnapshotFieldAccess } from '#lib/server/market-view.js';
 
 export interface SavedWatchlistItem {
 	id: string;

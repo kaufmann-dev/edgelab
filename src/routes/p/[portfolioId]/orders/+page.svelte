@@ -5,9 +5,9 @@
 	import { applyAction, deserialize } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { OrdersTable } from '$lib/components/trading';
-	import type { OrderRow } from '$lib/components/trading';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { OrdersTable } from '#lib/components/trading/index.js';
+	import type { OrderRow } from '#lib/components/trading/index.js';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
 	import type { PageProps } from './$types';
 
 	type CancelSuccess = { canceledOrderId: string };

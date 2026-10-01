@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { LayoutServerLoad } from './$types';
-import { getOwnedActivePortfolio } from '$lib/server/portfolios/repository';
+import { getOwnedActivePortfolio } from '#lib/server/portfolios/repository.js';
 
 const portfolioIdSchema = z.uuid();
 

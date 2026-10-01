@@ -5,9 +5,9 @@ import type {
 	MetricItem,
 	OrderRow,
 	PositionRow
-} from '$lib/components/trading/types';
-import { completedMinuteEnd, loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
-import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
+} from '#lib/components/trading/types.js';
+import { completedMinuteEnd, loadLatestCompletedMinuteBar } from '#lib/server/market-bars.js';
+import { getMarketDataProvider, getMarketEnvironment } from '#lib/server/market.js';
 import {
 	MassiveHttpError,
 	type AssetCapabilities,
@@ -17,8 +17,12 @@ import {
 	type MarketDataRestProvider,
 	type MarketSnapshot,
 	type NormalizedBar
-} from '$lib/server/market-data';
-import type { OrderRecord, PortfolioValuation, PositionRecord } from '$lib/server/portfolio-read';
+} from '#lib/server/market-data/index.js';
+import type {
+	OrderRecord,
+	PortfolioValuation,
+	PositionRecord
+} from '#lib/server/portfolio-read.js';
 
 const AGGREGATE_REQUEST_CONCURRENCY = 8;
 

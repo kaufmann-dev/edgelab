@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import type { ClosedTradeSample } from '$lib/domain/analytics';
-import { db } from '$lib/server/db';
+import type { ClosedTradeSample } from '#lib/domain/analytics.js';
+import { db } from '#lib/server/db/index.js';
 import {
 	tradingCashLedger,
 	tradingEquitySnapshots,
@@ -16,8 +16,8 @@ import {
 	tradingPortfolios,
 	tradingPositions,
 	tradingReservations
-} from '$lib/server/db/schema/trading';
-import { getOwnedActivePortfolio } from '$lib/server/portfolios/repository';
+} from '#lib/server/db/schema/trading.js';
+import { getOwnedActivePortfolio } from '#lib/server/portfolios/repository.js';
 
 export interface PositionRecord {
 	id: string;

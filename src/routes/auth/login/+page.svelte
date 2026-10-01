@@ -3,7 +3,7 @@
 	import ChartCandlestickIcon from '@lucide/svelte/icons/chart-candlestick';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { ModeWatcher } from 'mode-watcher';
 	import type { PageProps } from './$types';
 
@@ -31,15 +31,18 @@
 			<div class="grid size-11 place-items-center border border-border bg-muted">
 				<ShieldCheckIcon class="size-5 text-muted-foreground" aria-hidden="true" />
 			</div>
+
 			<h1 id="login-title" class="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
 				Sign in to EdgeLab
 			</h1>
+
 			<p class="mt-3 text-sm leading-6 text-muted-foreground">
 				Continue through the configured identity provider to access your paper-trading workspace.
 			</p>
 
-			<form method="GET" action={resolve('/auth/login/start')} class="mt-7">
+			<form method="GET" action={resolve('auth/login/start')} class="mt-7">
 				<input type="hidden" name="returnTo" value={data.returnTo} />
+
 				<Button type="submit" class="h-11 w-full rounded-none px-4 shadow-none transition-none">
 					Sign in
 					<ArrowRightIcon class="size-4" aria-hidden="true" />

@@ -5,7 +5,7 @@ import {
 	tradingOrderLegs,
 	tradingOrders,
 	tradingPortfolios
-} from '$lib/server/db/schema/trading';
+} from '#lib/server/db/schema/trading.js';
 import {
 	assetClassSchema,
 	marketDataModeSchema,
@@ -17,16 +17,16 @@ import {
 	type NormalizedMarketEvent,
 	supportsOptionsExecution,
 	supportsStockSimulation
-} from '$lib/server/market-data';
-import { getMarketEnvironment } from '$lib/server/market';
+} from '#lib/server/market-data/index.js';
+import { getMarketEnvironment } from '#lib/server/market.js';
 import {
 	dayOrderExpiration,
 	getMassiveMarketHolidays,
 	orderAllowsSession,
 	usEquityMarketDate,
 	usEquitySessionAt
-} from '$lib/server/market-session';
-import { marketStreamHub } from '$lib/server/market-stream';
+} from '#lib/server/market-session.js';
+import { marketStreamHub } from '#lib/server/market-stream.js';
 import {
 	SIMULATION_EXECUTION_MODEL,
 	SIMULATION_FEE_MODEL,
@@ -44,7 +44,7 @@ import {
 	type OrderType,
 	type StrategyFill,
 	type TimeInForce
-} from '$lib/server/trading';
+} from '#lib/server/trading/index.js';
 
 const REFRESH_INTERVAL_MILLISECONDS = 15_000;
 const MAX_BAR_AGE_MILLISECONDS = 60_000;
@@ -349,7 +349,7 @@ export class LiveOrderExecutionCoordinator {
 
 	async #loadOpenOrders(): Promise<TrackedOrder[]> {
 		try {
-			const { db } = await import('$lib/server/db');
+			const { db } = await import('#lib/server/db/index.js');
 			const rows = await db
 				.select({
 					orderId: tradingOrders.id,

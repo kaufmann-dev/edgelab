@@ -1,13 +1,13 @@
 import Decimal from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { users } from '$lib/server/db/schema/auth';
+import { users } from '#lib/server/db/schema/auth.js';
 import {
 	tradingCashLedger,
 	tradingPortfolioPolicies,
 	tradingPortfolios,
 	tradingReservations
-} from '$lib/server/db/schema/trading';
+} from '#lib/server/db/schema/trading.js';
 import { createAcceptedOrder } from './orders';
 import { drizzleTradingRepository } from './drizzle-repository';
 
@@ -15,7 +15,7 @@ const describeDatabase = process.env.RUN_DATABASE_INTEGRATION === 'true' ? descr
 
 describeDatabase('DrizzleTradingRepository integration', () => {
 	it('locks an owned portfolio and atomically persists an idempotent reserved order', async () => {
-		const { db } = await import('$lib/server/db');
+		const { db } = await import('#lib/server/db/index.js');
 		const now = new Date();
 		const [user] = await db
 			.insert(users)

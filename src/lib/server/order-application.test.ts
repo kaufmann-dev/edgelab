@@ -6,15 +6,15 @@ import {
 	stockInstrumentSchema,
 	type Instrument,
 	type OptionInstrument
-} from '$lib/server/market-data';
-import { resetMarketHolidayCacheForTests } from '$lib/server/market-session';
+} from '#lib/server/market-data/index.js';
+import { resetMarketHolidayCacheForTests } from '#lib/server/market-session.js';
 import {
 	createAcceptedOrder,
 	drizzleTradingRepository,
 	orderDraftSchema,
 	type OrderDraft,
 	type TradingUnitOfWork
-} from '$lib/server/trading';
+} from '#lib/server/trading/index.js';
 
 const marketMocks = vi.hoisted(() => ({
 	getMarketDataProvider: vi.fn(),
@@ -31,10 +31,10 @@ const liveExecutionMocks = vi.hoisted(() => ({
 	notifyOrdersChanged: vi.fn()
 }));
 
-vi.mock('$lib/server/market', () => marketMocks);
-vi.mock('$lib/server/portfolio-read', () => portfolioMocks);
-vi.mock('$lib/server/live-order-execution', () => liveExecutionMocks);
-vi.mock('$lib/server/db', () => ({ db: {} }));
+vi.mock('#lib/server/market.js', () => marketMocks);
+vi.mock('#lib/server/portfolio-read.js', () => portfolioMocks);
+vi.mock('#lib/server/live-order-execution.js', () => liveExecutionMocks);
+vi.mock('#lib/server/db/index.js', () => ({ db: {} }));
 
 import {
 	assertSupportedOptionOrderSurface as assertResolvedOptionOrderSurface,

@@ -1,8 +1,7 @@
-import { json } from '@sveltejs/kit';
 import { z } from 'zod';
-import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
-import { MassiveHttpError } from '$lib/server/market-data';
-import { serializeBar } from '$lib/server/market-view';
+import { getMarketDataProvider, getMarketEnvironment } from '#lib/server/market.js';
+import { MassiveHttpError } from '#lib/server/market-data/index.js';
+import { serializeBar } from '#lib/server/market-view.js';
 import type { RequestHandler } from './$types';
 
 const symbolSchema = z
@@ -18,15 +17,21 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	const to = dateSchema.safeParse(url.searchParams.get('to'));
 	const assetClass = symbol.success && symbol.data.startsWith('O:') ? 'options' : 'stocks';
 	if (!symbol.success || !from.success || !to.success) {
-		return json({ error: 'Provide a valid symbol and YYYY-MM-DD from/to dates.' }, { status: 400 });
+		return Response.json(
+			{ error: 'Provide a valid symbol and YYYY-MM-DD from/to dates.' },
+			{ status: 400 }
+		);
 	}
 	if (Date.parse(from.data) > Date.parse(to.data)) {
-		return json({ error: 'The from date must not be after the to date.' }, { status: 400 });
+		return Response.json(
+			{ error: 'The from date must not be after the to date.' },
+			{ status: 400 }
+		);
 	}
 	const environment = getMarketEnvironment();
 	const capability = environment.capabilities[assetClass];
 	if (!capability.minuteBars) {
-		return json(
+		return Response.json(
 			{
 				error: `${assetClass === 'stocks' ? 'Stock' : 'Option'} aggregate bars are not included in the configured Massive plan.`
 			},
@@ -44,14 +49,14 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			to: to.data,
 			limit: 5_000
 		});
-		return json({
+		return Response.json({
 			items: page.items.map(serializeBar),
 			feed: capability,
 			nextUrlAvailable: Boolean(page.nextUrl)
 		});
 	} catch (cause) {
 		if (cause instanceof MassiveHttpError) {
-			return json({ error: cause.message }, { status: cause.status === 429 ? 429 : 502 });
+			return Response.json({ error: cause.message }, { status: cause.status === 429 ? 429 : 502 });
 		}
 		throw cause;
 	}

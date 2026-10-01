@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { listPortfolioActivity, requirePortfolioReadAccess } from '$lib/server/portfolio-read';
+import { listPortfolioActivity, requirePortfolioReadAccess } from '#lib/server/portfolio-read.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {

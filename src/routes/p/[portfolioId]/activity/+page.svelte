@@ -3,8 +3,8 @@
 	import ListTreeIcon from '@lucide/svelte/icons/list-tree';
 	import ReceiptTextIcon from '@lucide/svelte/icons/receipt-text';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
-	import { EmptyState } from '$lib/components/trading';
-	import { Badge } from '$lib/components/ui/badge';
+	import { EmptyState } from '#lib/components/trading/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

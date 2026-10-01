@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
-import { getAuthEnvironment } from '$lib/server/auth/environment';
-import { safeReturnTo } from '$lib/server/auth/validation';
+import { getAuthEnvironment } from '#lib/server/auth/environment.js';
+import { safeReturnTo } from '#lib/server/auth/validation.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ locals, setHeaders, url }) => {

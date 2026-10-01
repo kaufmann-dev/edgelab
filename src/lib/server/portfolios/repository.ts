@@ -1,17 +1,17 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import type { CreatePortfolioInput } from '$lib/domain/forms';
-import { db } from '$lib/server/db';
+import type { CreatePortfolioInput } from '#lib/domain/forms.js';
+import { db } from '#lib/server/db/index.js';
 import {
 	tradingCashLedger,
 	tradingEquitySnapshots,
 	tradingOrders,
 	tradingPortfolioPolicies,
 	tradingPortfolios
-} from '$lib/server/db/schema/trading';
+} from '#lib/server/db/schema/trading.js';
 import {
 	DEFAULT_EXECUTION_MODEL_VERSION,
 	DEFAULT_RISK_MODEL_VERSION
-} from '$lib/server/trading/types';
+} from '#lib/server/trading/types.js';
 import type { ArchivePortfolioResult, OwnedPortfolio, PortfolioSummary } from './types';
 
 const openOrderStatuses = ['pending_new', 'open', 'partially_filled'] as const;

@@ -6,9 +6,9 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 	import { resolve } from '$app/paths';
-	import * as Alert from '$lib/components/ui/alert/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -67,7 +67,7 @@
 				</p>
 			</div>
 			<Button
-				href={resolve('/portfolios/new')}
+				href={resolve('portfolios/new')}
 				class="h-11 rounded-none px-4 shadow-none transition-none"
 			>
 				<PlusIcon class="size-4" aria-hidden="true" />
@@ -110,7 +110,7 @@
 							risk.
 						</p>
 						<Button
-							href={resolve('/portfolios/new')}
+							href={resolve('portfolios/new')}
 							class="mt-5 h-11 rounded-none px-4 shadow-none transition-none"
 						>
 							<PlusIcon class="size-4" aria-hidden="true" />

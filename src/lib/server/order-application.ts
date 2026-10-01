@@ -1,9 +1,9 @@
 import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { tradingJournalEntries } from '$lib/server/db/schema/trading';
-import { loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
-import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
+import { db } from '#lib/server/db/index.js';
+import { tradingJournalEntries } from '#lib/server/db/schema/trading.js';
+import { loadLatestCompletedMinuteBar } from '#lib/server/market-bars.js';
+import { getMarketDataProvider, getMarketEnvironment } from '#lib/server/market.js';
 import {
 	MassiveHttpError,
 	supportsOptionsExecution,
@@ -11,18 +11,18 @@ import {
 	type Instrument,
 	type MassiveMarketHoliday,
 	type NormalizedBar
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 import {
 	dayOrderMarketDate,
 	getMassiveMarketHolidays,
 	usEquityMarketDate
-} from '$lib/server/market-session';
-import { notifyOrdersChanged } from '$lib/server/live-order-execution';
+} from '#lib/server/market-session.js';
+import { notifyOrdersChanged } from '#lib/server/live-order-execution.js';
 import {
 	getPortfolioPolicy,
 	listPortfolioEquity,
 	requirePortfolioReadAccess
-} from '$lib/server/portfolio-read';
+} from '#lib/server/portfolio-read.js';
 import {
 	acceptedOrderMatchesDraft,
 	createAcceptedOrder,
@@ -38,7 +38,7 @@ import {
 	type TradingUnitOfWork,
 	SIMULATION_EXECUTION_MODEL,
 	SIMULATION_FEE_MODEL
-} from '$lib/server/trading';
+} from '#lib/server/trading/index.js';
 
 const MAX_REFERENCE_BAR_AGE_MILLISECONDS = 60_000;
 const REFERENCE_BAR_FUTURE_TOLERANCE_MILLISECONDS = 1_000;

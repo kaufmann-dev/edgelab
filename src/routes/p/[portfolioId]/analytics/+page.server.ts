@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
-import { calculatePerformanceMetrics } from '$lib/domain/analytics';
+import { calculatePerformanceMetrics } from '#lib/domain/analytics.js';
 import {
 	listPortfolioClosedTradeSamples,
 	listPortfolioEquity,
 	requirePortfolioReadAccess
-} from '$lib/server/portfolio-read';
-import { buildEquityCurve } from '$lib/server/portfolio-view';
+} from '#lib/server/portfolio-read.js';
+import { buildEquityCurve } from '#lib/server/portfolio-view.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {

@@ -1,12 +1,12 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { SESSION_COOKIE_NAME } from '$lib/server/auth/constants';
-import { clearSessionCookie } from '$lib/server/auth/cookies';
-import { getAuthEnvironment } from '$lib/server/auth/environment';
-import { createLogoutUrl } from '$lib/server/auth/oidc';
-import { redirectNoStore } from '$lib/server/auth/responses';
-import { endAuthenticatedSession } from '$lib/server/auth/session';
-import { assertSameOrigin } from '$lib/server/auth/validation';
+import { SESSION_COOKIE_NAME } from '#lib/server/auth/constants.js';
+import { clearSessionCookie } from '#lib/server/auth/cookies.js';
+import { getAuthEnvironment } from '#lib/server/auth/environment.js';
+import { createLogoutUrl } from '#lib/server/auth/oidc.js';
+import { redirectNoStore } from '#lib/server/auth/responses.js';
+import { endAuthenticatedSession } from '#lib/server/auth/session.js';
+import { assertSameOrigin } from '#lib/server/auth/validation.js';
 
 export const POST: RequestHandler = async ({ cookies, locals, request }) => {
 	const environment = getAuthEnvironment();

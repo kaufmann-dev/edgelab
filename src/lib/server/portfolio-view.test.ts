@@ -6,7 +6,7 @@ import {
 	type MarketDataMode,
 	type MarketSnapshot,
 	type NormalizedBar
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 import type { PositionRecord } from './portfolio-read';
 
 const marketMocks = vi.hoisted(() => ({
@@ -32,7 +32,7 @@ const marketMocks = vi.hoisted(() => ({
 	}
 }));
 
-vi.mock('$lib/server/market', () => ({
+vi.mock('#lib/server/market.js', () => ({
 	getMarketEnvironment: () => ({
 		capabilities: marketMocks.capabilities
 	}),

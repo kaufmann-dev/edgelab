@@ -4,7 +4,7 @@ import type {
 	MarketDataRestProvider,
 	MarketSnapshot,
 	NormalizedBar
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 
 const MINUTE_MILLISECONDS = 60_000;
 const DEFAULT_LOOKBACK_MINUTES = 5;

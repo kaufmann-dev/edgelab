@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArrowLeft, CircleAlert, RefreshCw } from '@lucide/svelte';
 	import { page } from '$app/state';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '#lib/components/ui/button/index.js';
 </script>
 
 <svelte:head>

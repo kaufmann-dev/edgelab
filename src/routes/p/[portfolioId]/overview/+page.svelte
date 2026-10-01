@@ -8,9 +8,9 @@
 		MetricStrip,
 		OrdersTable,
 		PositionsTable
-	} from '$lib/components/trading';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { Button } from '$lib/components/ui/button';
+	} from '#lib/components/trading/index.js';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

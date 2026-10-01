@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import type { AuthEnvironment } from '$lib/server/auth/environment';
+import type { AuthEnvironment } from '#lib/server/auth/environment.js';
 
 const environment: AuthEnvironment = {
 	origin: 'https://trade.example.com',
@@ -12,7 +12,7 @@ const environment: AuthEnvironment = {
 	secureCookies: true
 };
 
-vi.mock('$lib/server/auth/environment', () => ({ getAuthEnvironment: () => environment }));
+vi.mock('#lib/server/auth/environment.js', () => ({ getAuthEnvironment: () => environment }));
 
 import { load } from './+page.server';
 

@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import * as env from '$app/env/private';
 import {
 	MassiveRestClient,
 	massivePlanSelectionSchema,
@@ -7,7 +7,7 @@ import {
 	type MassiveCapabilitySet,
 	type MassivePlanSelection,
 	type MassivePlanTier
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 
 export interface MarketEnvironment {
 	apiKey: string;

@@ -1,12 +1,12 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db/index.js';
 import {
 	tradingOrderEvents,
 	tradingOrders,
 	tradingPortfolios,
 	tradingReservations
-} from '$lib/server/db/schema/trading';
-import { notifyOrdersChanged } from '$lib/server/live-order-execution';
+} from '#lib/server/db/schema/trading.js';
+import { notifyOrdersChanged } from '#lib/server/live-order-execution.js';
 
 export type CancelOrderResult = 'canceled' | 'not_found' | 'already_terminal';
 

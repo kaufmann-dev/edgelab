@@ -1,15 +1,15 @@
 import { error, fail } from '@sveltejs/kit';
 import { z } from 'zod';
-import { getMarketDataProvider, getMarketEnvironment } from '$lib/server/market';
-import { MassiveHttpError, type Instrument } from '$lib/server/market-data';
-import { serializeInstrument } from '$lib/server/market-view';
-import { requirePortfolioReadAccess } from '$lib/server/portfolio-read';
+import { getMarketDataProvider, getMarketEnvironment } from '#lib/server/market.js';
+import { MassiveHttpError, type Instrument } from '#lib/server/market-data/index.js';
+import { serializeInstrument } from '#lib/server/market-view.js';
+import { requirePortfolioReadAccess } from '#lib/server/portfolio-read.js';
 import {
 	addStockToOwnedDefaultWatchlist,
 	loadOwnedDefaultWatchlist,
 	removeOwnedWatchlistItem,
 	WatchlistMarketDataError
-} from '$lib/server/watchlists';
+} from '#lib/server/watchlists.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const MAX_QUERY_LENGTH = 80;

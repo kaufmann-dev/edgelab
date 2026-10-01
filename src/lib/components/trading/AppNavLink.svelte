@@ -24,39 +24,28 @@
 		href={resolve(item.route, item.params)}
 		aria-current={active ? 'page' : undefined}
 		class={className}
-		{onclick}
+		{onclick}>{@render content()}</a
 	>
-		{@render content()}
-	</a>
 {:else if item.route === '/'}
-	<a href={resolve('/')} aria-current={active ? 'page' : undefined} class={className} {onclick}>
-		{@render content()}
-	</a>
+	<a href={resolve('/')} aria-current={active ? 'page' : undefined} class={className} {onclick}
+		>{@render content()}</a
+	>
 {:else if item.route === '/portfolios'}
 	<a
-		href={resolve('/portfolios')}
+		href={resolve('portfolios')}
 		aria-current={active ? 'page' : undefined}
 		class={className}
-		{onclick}
+		{onclick}>{@render content()}</a
 	>
-		{@render content()}
-	</a>
 {:else if item.route === '/learn'}
-	<a
-		href={resolve('/learn')}
-		aria-current={active ? 'page' : undefined}
-		class={className}
-		{onclick}
+	<a href={resolve('learn')} aria-current={active ? 'page' : undefined} class={className} {onclick}
+		>{@render content()}</a
 	>
-		{@render content()}
-	</a>
 {:else}
 	<a
-		href={resolve('/settings')}
+		href={resolve('settings')}
 		aria-current={active ? 'page' : undefined}
 		class={className}
-		{onclick}
+		{onclick}>{@render content()}</a
 	>
-		{@render content()}
-	</a>
 {/if}

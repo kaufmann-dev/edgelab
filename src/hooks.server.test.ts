@@ -1,7 +1,7 @@
 import type { Cookies, RequestEvent } from '@sveltejs/kit';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { AuthEnvironment } from '$lib/server/auth/environment';
-import type { AuthenticatedSession } from '$lib/server/auth/types';
+import type { AuthEnvironment } from '#lib/server/auth/environment.js';
+import type { AuthenticatedSession } from '#lib/server/auth/types.js';
 
 const authMocks = vi.hoisted(() => ({
 	loadAuthenticatedSession: vi.fn(),
@@ -20,10 +20,10 @@ const environment: AuthEnvironment = {
 };
 
 vi.mock('$app/environment', () => ({ building: true }));
-vi.mock('$lib/server/auth/environment', () => ({ getAuthEnvironment: () => environment }));
-vi.mock('$lib/server/auth/session', () => authMocks);
+vi.mock('#lib/server/auth/environment.js', () => ({ getAuthEnvironment: () => environment }));
+vi.mock('#lib/server/auth/session.js', () => authMocks);
 
-import { SESSION_COOKIE_NAME } from '$lib/server/auth/constants';
+import { SESSION_COOKIE_NAME } from '#lib/server/auth/constants.js';
 import { handleAuthentication } from './hooks.server';
 
 const authenticated: AuthenticatedSession = {

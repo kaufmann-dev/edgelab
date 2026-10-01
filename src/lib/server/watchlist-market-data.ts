@@ -1,18 +1,21 @@
-import { completedSnapshotMinuteBar, loadLatestCompletedMinuteBar } from '$lib/server/market-bars';
+import {
+	completedSnapshotMinuteBar,
+	loadLatestCompletedMinuteBar
+} from '#lib/server/market-bars.js';
 import {
 	MassiveHttpError,
 	type MarketDataMode,
 	type MarketDataRestProvider,
 	type MarketSnapshot,
 	type NormalizedBar
-} from '$lib/server/market-data';
-import type { SnapshotFieldAccess } from '$lib/server/market-view';
+} from '#lib/server/market-data/index.js';
+import type { SnapshotFieldAccess } from '#lib/server/market-view.js';
 import {
 	mergeWatchlistSnapshots,
 	type SavedWatchlistItem,
 	type SavedWatchlistRow,
 	unavailableWatchlistRows
-} from '$lib/server/watchlists.logic';
+} from '#lib/server/watchlists.logic.js';
 
 const SNAPSHOT_BATCH_SIZE = 250;
 const AGGREGATE_REQUEST_CONCURRENCY = 8;

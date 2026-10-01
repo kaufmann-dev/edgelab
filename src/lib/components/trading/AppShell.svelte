@@ -2,8 +2,8 @@
 	import ChartCandlestickIcon from '@lucide/svelte/icons/chart-candlestick';
 	import MenuIcon from '@lucide/svelte/icons/menu';
 	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import type { Snippet } from 'svelte';
 	import AppNavLink from './AppNavLink.svelte';
 	import type { AppNavItem } from './types.js';
@@ -61,7 +61,7 @@
 				{@render portfolioSwitcher()}
 			{:else}
 				<a
-					href={resolve('/portfolios')}
+					href={resolve('portfolios')}
 					class="block min-h-11 border border-border px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 				>
 					<span class="block text-xs text-muted-foreground">Portfolio</span>
@@ -122,7 +122,7 @@
 				{#if portfolioSwitcher}
 					{@render portfolioSwitcher()}
 				{:else}
-					<a href={resolve('/portfolios')} class="block truncate text-sm font-semibold"
+					<a href={resolve('portfolios')} class="block truncate text-sm font-semibold"
 						>{portfolioName}</a
 					>
 				{/if}

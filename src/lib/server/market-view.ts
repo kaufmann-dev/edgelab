@@ -5,7 +5,7 @@ import type {
 	NormalizedQuote,
 	NormalizedTrade,
 	OptionSnapshot
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 
 export interface SnapshotFieldAccess {
 	quotes: boolean;

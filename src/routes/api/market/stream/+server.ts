@@ -1,16 +1,15 @@
-import { json } from '@sveltejs/kit';
 import { z } from 'zod';
-import { getMarketEnvironment } from '$lib/server/market';
+import { getMarketEnvironment } from '#lib/server/market.js';
 import {
 	acquireMarketStreamAccess,
 	MarketStreamAccessError
-} from '$lib/server/market-stream-access';
+} from '#lib/server/market-stream-access.js';
 import {
 	buildMarketTopics,
 	marketStreamHub,
 	type MarketStreamEventName,
 	type MarketStreamMessage
-} from '$lib/server/market-stream';
+} from '#lib/server/market-stream.js';
 import type { RequestHandler } from './$types';
 
 const assetClassSchema = z.enum(['stocks', 'options']);
@@ -23,13 +22,13 @@ function encode(message: MarketStreamMessage): Uint8Array {
 }
 
 export const GET: RequestHandler = ({ url, request, locals }) => {
-	if (!locals.user) return json({ error: 'Authentication required.' }, { status: 401 });
+	if (!locals.user) return Response.json({ error: 'Authentication required.' }, { status: 401 });
 	const assetClass = assetClassSchema.safeParse(url.searchParams.get('assetClass'));
 	const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean);
 	const eventValues = (url.searchParams.get('events') ?? 'AM').split(',');
 	const events = z.array(eventSchema).min(1).safeParse(eventValues);
 	if (!assetClass.success || !events.success) {
-		return json({ error: 'Invalid assetClass or event selection.' }, { status: 400 });
+		return Response.json({ error: 'Invalid assetClass or event selection.' }, { status: 400 });
 	}
 
 	let topics: string[];
@@ -37,31 +36,31 @@ export const GET: RequestHandler = ({ url, request, locals }) => {
 		const environment = getMarketEnvironment();
 		const capabilities = environment.capabilities[assetClass.data];
 		if (events.data.includes('Q') && !capabilities.quotes) {
-			return json(
+			return Response.json(
 				{ error: 'Quote events are not included in the configured plan.' },
 				{ status: 409 }
 			);
 		}
 		if (events.data.includes('T') && !capabilities.trades) {
-			return json(
+			return Response.json(
 				{ error: 'Trade events are not included in the configured plan.' },
 				{ status: 409 }
 			);
 		}
 		if (events.data.includes('A') && !capabilities.secondBars) {
-			return json(
+			return Response.json(
 				{ error: 'Second aggregate events are not included in the configured plan.' },
 				{ status: 409 }
 			);
 		}
 		if (events.data.includes('AM') && !capabilities.minuteBars) {
-			return json(
+			return Response.json(
 				{ error: 'Minute aggregate events are not included in the configured plan.' },
 				{ status: 409 }
 			);
 		}
 		if (events.data.includes('LULD') && !capabilities.luld) {
-			return json(
+			return Response.json(
 				{ error: 'LULD events are not included in the configured plan.' },
 				{ status: 409 }
 			);
@@ -72,7 +71,7 @@ export const GET: RequestHandler = ({ url, request, locals }) => {
 			events: events.data as MarketStreamEventName[]
 		});
 	} catch (cause) {
-		return json(
+		return Response.json(
 			{ error: cause instanceof Error ? cause.message : 'Market stream unavailable.' },
 			{ status: 503 }
 		);
@@ -85,7 +84,7 @@ export const GET: RequestHandler = ({ url, request, locals }) => {
 		});
 	} catch (cause) {
 		if (cause instanceof MarketStreamAccessError) {
-			return json(
+			return Response.json(
 				{ error: cause.message },
 				{ status: 429, headers: { 'retry-after': String(cause.retryAfterSeconds) } }
 			);

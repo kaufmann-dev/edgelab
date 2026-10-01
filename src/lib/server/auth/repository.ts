@@ -1,6 +1,6 @@
 import { and, eq, gt, lte, or, sql } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { authSessions, oidcLoginRequests, users } from '$lib/server/db/schema/auth';
+import { db } from '#lib/server/db/index.js';
+import { authSessions, oidcLoginRequests, users } from '#lib/server/db/schema/auth.js';
 import type { AuthenticatedSession, AuthUser, LoginRequest, OidcIdentity } from './types';
 
 const MAX_OUTSTANDING_LOGIN_REQUESTS = 1_000;

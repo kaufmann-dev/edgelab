@@ -3,11 +3,11 @@
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
-	import * as Table from '$lib/components/ui/table/index.js';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import type { Snippet } from 'svelte';
 	import EmptyState from './EmptyState.svelte';
 	import { formatPercent, humanize, signedCurrency, toneForNumber } from './format.js';

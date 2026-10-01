@@ -1,5 +1,5 @@
-import type { MassiveMarketHoliday } from '$lib/server/market-data';
-import { getMarketDataProvider } from '$lib/server/market';
+import type { MassiveMarketHoliday } from '#lib/server/market-data/index.js';
+import { getMarketDataProvider } from '#lib/server/market.js';
 
 export type UsEquitySession = 'regular' | 'extended' | 'closed';
 

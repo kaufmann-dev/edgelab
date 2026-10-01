@@ -2,9 +2,9 @@
 	import ChartNoAxesCombinedIcon from '@lucide/svelte/icons/chart-no-axes-combined';
 	import ClipboardCheckIcon from '@lucide/svelte/icons/clipboard-check';
 	import ScaleIcon from '@lucide/svelte/icons/scale';
-	import { EquityCurveChart, MetricStrip } from '$lib/components/trading';
-	import type { MetricItem, ValueTone } from '$lib/components/trading';
-	import { Badge } from '$lib/components/ui/badge';
+	import { EquityCurveChart, MetricStrip } from '#lib/components/trading/index.js';
+	import type { MetricItem, ValueTone } from '#lib/components/trading/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

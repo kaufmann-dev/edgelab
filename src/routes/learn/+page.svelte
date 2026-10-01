@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { BookOpen, CheckCircle2, GraduationCap, ShieldAlert } from '@lucide/svelte';
-	import { learningLessons } from '$lib/domain/lessons';
+	import { learningLessons } from '#lib/domain/lessons.js';
 </script>
 
 <svelte:head>

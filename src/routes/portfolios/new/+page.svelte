@@ -7,11 +7,11 @@
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 	import SlidersHorizontalIcon from '@lucide/svelte/icons/sliders-horizontal';
 	import { resolve } from '$app/paths';
-	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import { createPortfolioSchema } from '$lib/domain/forms';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { createPortfolioSchema } from '#lib/domain/forms.js';
 	import { Control, Description, Field, FieldErrors, Label } from 'formsnap';
 	import { untrack } from 'svelte';
 	import { superForm } from 'sveltekit-superforms';
@@ -69,7 +69,7 @@
 
 	<div class="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 sm:py-10">
 		<a
-			href={resolve('/portfolios')}
+			href={resolve('portfolios')}
 			class="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 		>
 			<ArrowLeftIcon class="size-4" aria-hidden="true" />
@@ -80,7 +80,9 @@
 			<p class="text-xs font-medium tracking-[0.16em] text-muted-foreground uppercase">
 				New simulation
 			</p>
+
 			<h1 class="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Set your trading rules</h1>
+
 			<p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
 				Capital, permissions, and risk limits stay isolated to this portfolio. You can create
 				another portfolio later for a different strategy.
@@ -530,7 +532,7 @@
 					class="flex flex-col-reverse gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-end"
 				>
 					<Button
-						href={resolve('/portfolios')}
+						href={resolve('portfolios')}
 						variant="outline"
 						class="h-11 rounded-none px-5 shadow-none transition-none">Cancel</Button
 					>
@@ -579,7 +581,7 @@
 						<div>
 							<p class="font-medium">Nothing reaches a broker</p>
 							<p class="mt-1 leading-5 text-muted-foreground">
-								Every fill, position, and P&amp;L figure belongs to the simulator.
+								Every fill, position, and P&L figure belongs to the simulator.
 							</p>
 						</div>
 					</li>

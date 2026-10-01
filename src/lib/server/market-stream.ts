@@ -4,8 +4,8 @@ import {
 	type MarketDataMode,
 	type MassiveSocketStatus,
 	type NormalizedMarketEvent
-} from '$lib/server/market-data';
-import { getMarketEnvironment } from '$lib/server/market';
+} from '#lib/server/market-data/index.js';
+import { getMarketEnvironment } from '#lib/server/market.js';
 
 export type MarketStreamEventName = 'Q' | 'T' | 'A' | 'AM' | 'LULD';
 

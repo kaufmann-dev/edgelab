@@ -1,10 +1,10 @@
 <script lang="ts">
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
-	import * as Table from '$lib/components/ui/table/index.js';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import EmptyState from './EmptyState.svelte';
 	import { humanize } from './format.js';
 	import type { DataError, OptionChainRow, OptionContractQuote, OptionType } from './types.js';

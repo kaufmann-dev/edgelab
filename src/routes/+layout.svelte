@@ -13,11 +13,11 @@
 	import WalletCardsIcon from '@lucide/svelte/icons/wallet-cards';
 	import { asset, resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { AppHeaderActions } from '$lib/components/app/index.js';
-	import { Toaster } from '$lib/components/ui/sonner/index.js';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import { AppShell, MarketFeedStatus } from '$lib/components/trading/index.js';
-	import type { AppNavItem, MarketFeedState } from '$lib/components/trading/types.js';
+	import { AppHeaderActions } from '#lib/components/app/index.js';
+	import { Toaster } from '#lib/components/ui/sonner/index.js';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import { AppShell, MarketFeedStatus } from '#lib/components/trading/index.js';
+	import type { AppNavItem, MarketFeedState } from '#lib/components/trading/types.js';
 	import { ModeWatcher } from 'mode-watcher';
 	import type { LayoutProps } from './$types';
 	import './layout.css';
@@ -26,7 +26,6 @@
 		id: string;
 		name: string;
 	}
-
 	interface MarketFeedContext {
 		state: MarketFeedState;
 		modeLabel: string;
@@ -55,11 +54,11 @@
 			case '/':
 				return resolve('/');
 			case '/portfolios':
-				return resolve('/portfolios');
+				return resolve('portfolios');
 			case '/learn':
-				return resolve('/learn');
+				return resolve('learn');
 			case '/settings':
-				return resolve('/settings');
+				return resolve('settings');
 		}
 	}
 
@@ -150,7 +149,7 @@
 	});
 </script>
 
-<svelte:head><link rel="icon" href={asset('/favicon.svg')} /></svelte:head>
+<svelte:head><link rel="icon" href={asset('favicon.svg')} /></svelte:head>
 
 {#if data.user}
 	<ModeWatcher disableTransitions />
@@ -163,7 +162,7 @@
 		>
 			{#snippet portfolioSwitcher()}
 				<a
-					href={resolve('/portfolios')}
+					href={resolve('portfolios')}
 					class="flex min-h-11 min-w-0 items-center gap-2 border border-border px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 					aria-label={portfolio
 						? `Change portfolio. Current portfolio: ${portfolio.name}`
@@ -191,7 +190,9 @@
 			{/snippet}
 
 			{#snippet headerActions()}
-				{#if data.user}<AppHeaderActions user={data.user} {searchHref} />{/if}
+				{#if data.user}
+					<AppHeaderActions user={data.user} {searchHref} />
+				{/if}
 			{/snippet}
 
 			{@render children()}

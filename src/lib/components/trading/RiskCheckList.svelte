@@ -2,7 +2,7 @@
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import ShieldXIcon from '@lucide/svelte/icons/shield-x';
-	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import type { RiskCheck, RiskCheckStatus } from './types.js';
 
 	interface Props {

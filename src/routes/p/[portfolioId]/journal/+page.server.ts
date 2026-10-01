@@ -3,10 +3,10 @@ import { and, eq } from 'drizzle-orm';
 import { message, superValidate } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
-import { journalEntrySchema, type JournalEntryInput } from '$lib/domain/forms';
-import { db } from '$lib/server/db';
-import { tradingJournalEntries } from '$lib/server/db/schema/trading';
-import { listPortfolioJournal, requirePortfolioReadAccess } from '$lib/server/portfolio-read';
+import { journalEntrySchema, type JournalEntryInput } from '#lib/domain/forms.js';
+import { db } from '#lib/server/db/index.js';
+import { tradingJournalEntries } from '#lib/server/db/schema/trading.js';
+import { listPortfolioJournal, requirePortfolioReadAccess } from '#lib/server/portfolio-read.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const journalEntryAdapter = zod4(journalEntrySchema);

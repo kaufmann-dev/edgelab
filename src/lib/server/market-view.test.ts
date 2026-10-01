@@ -4,7 +4,7 @@ import {
 	normalizedTradeSchema,
 	optionInstrumentSchema,
 	optionSnapshotSchema
-} from '$lib/server/market-data';
+} from '#lib/server/market-data/index.js';
 import { serializeOptionSnapshot } from './market-view';
 
 const at = new Date('2026-08-03T15:15:00.000Z');

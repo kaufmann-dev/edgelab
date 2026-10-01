@@ -1,17 +1,17 @@
-import { error, redirect, type Handle } from '@sveltejs/kit';
-import { building } from '$app/environment';
-import { sequence } from '@sveltejs/kit/hooks';
-import { getTextDirection } from '$lib/paraglide/runtime';
-import { paraglideMiddleware } from '$lib/paraglide/server';
-import { SESSION_COOKIE_NAME } from '$lib/server/auth/constants';
+import { error, redirect } from '@sveltejs/kit';
+import { building } from '$app/env';
+import { sequence, type Handle } from '@sveltejs/kit/hooks';
+import { getTextDirection } from '#lib/paraglide/runtime.js';
+import { paraglideMiddleware } from '#lib/paraglide/server.js';
+import { SESSION_COOKIE_NAME } from '#lib/server/auth/constants.js';
 import {
 	clearSessionCookie,
 	serializeClearedSessionCookie,
 	serializeSessionCookie
-} from '$lib/server/auth/cookies';
-import { getAuthEnvironment } from '$lib/server/auth/environment';
-import { loadAuthenticatedSession, refreshAuthenticatedSession } from '$lib/server/auth/session';
-import { ensureLiveOrderExecutionStarted } from '$lib/server/live-order-execution';
+} from '#lib/server/auth/cookies.js';
+import { getAuthEnvironment } from '#lib/server/auth/environment.js';
+import { loadAuthenticatedSession, refreshAuthenticatedSession } from '#lib/server/auth/session.js';
+import { ensureLiveOrderExecutionStarted } from '#lib/server/live-order-execution.js';
 
 const PUBLIC_ROUTE_IDS = new Set([
 	'/auth/login',
@@ -31,16 +31,17 @@ function isDocumentNavigation(request: Request): boolean {
 }
 
 const handleParaglide: Handle = ({ event, resolve }) =>
-	paraglideMiddleware(event.request, ({ request, locale }) => {
-		event.request = request;
-
-		return resolve(event, {
-			transformPageChunk: ({ html }) =>
-				html
-					.replace('%paraglide.lang%', locale)
-					.replace('%paraglide.dir%', getTextDirection(locale))
-		});
-	});
+	paraglideMiddleware(event.request, ({ request, locale }) =>
+		resolve(
+			{ ...event, request },
+			{
+				transformPageChunk: ({ html }) =>
+					html
+						.replace('%paraglide.lang%', locale)
+						.replace('%paraglide.dir%', getTextDirection(locale))
+			}
+		)
+	);
 
 export const handleAuthentication: Handle = async ({ event, resolve }) => {
 	const environment = getAuthEnvironment();

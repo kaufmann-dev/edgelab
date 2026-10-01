@@ -6,15 +6,14 @@
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import UserIcon from '@lucide/svelte/icons/user';
 	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { mode, toggleMode } from 'mode-watcher';
 
 	interface HeaderUser {
 		email: string | null;
 		displayName: string | null;
 	}
-
 	interface Props {
 		user: HeaderUser;
 		searchHref?: string;
@@ -103,7 +102,7 @@
 				</div>
 			</div>
 		</div>
-		<form method="POST" action={resolve('/auth/logout')}>
+		<form method="POST" action={resolve('auth/logout')}>
 			<button
 				type="submit"
 				class="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"

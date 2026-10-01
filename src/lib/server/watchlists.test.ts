@@ -1,6 +1,10 @@
 import Decimal from 'decimal.js';
 import { describe, expect, it, vi } from 'vitest';
-import { MassiveHttpError, type MarketSnapshot, type NormalizedBar } from '$lib/server/market-data';
+import {
+	MassiveHttpError,
+	type MarketSnapshot,
+	type NormalizedBar
+} from '#lib/server/market-data/index.js';
 import { hydrateWatchlistSnapshots } from './watchlist-market-data';
 import { mergeWatchlistSnapshots, type SavedWatchlistItem } from './watchlists.logic';
 

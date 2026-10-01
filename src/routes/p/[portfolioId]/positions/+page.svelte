@@ -2,9 +2,9 @@
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { MarketFeedStatus, MetricStrip, PositionsTable } from '$lib/components/trading';
-	import type { PositionRow } from '$lib/components/trading';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { MarketFeedStatus, MetricStrip, PositionsTable } from '#lib/components/trading/index.js';
+	import type { PositionRow } from '#lib/components/trading/index.js';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

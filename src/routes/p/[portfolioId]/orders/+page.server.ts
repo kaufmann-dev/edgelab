@@ -1,8 +1,8 @@
 import { fail, error } from '@sveltejs/kit';
 import { z } from 'zod';
-import { cancelOwnedOrder } from '$lib/server/order-mutations';
-import { listPortfolioOrders, requirePortfolioReadAccess } from '$lib/server/portfolio-read';
-import { buildOrderRows } from '$lib/server/portfolio-view';
+import { cancelOwnedOrder } from '#lib/server/order-mutations.js';
+import { listPortfolioOrders, requirePortfolioReadAccess } from '#lib/server/portfolio-read.js';
+import { buildOrderRows } from '#lib/server/portfolio-view.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const orderIdSchema = z.uuid();

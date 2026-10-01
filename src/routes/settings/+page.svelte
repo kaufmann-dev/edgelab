@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
-	import { EmptyState } from '$lib/components/trading';
+	import { EmptyState } from '#lib/components/trading/index.js';
 </script>
 
 <svelte:head><title>Settings · EdgeLab</title></svelte:head>

@@ -1,13 +1,13 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { OIDC_FLOW_COOKIE_NAME } from '$lib/server/auth/constants';
-import { clearOidcFlowCookie, setSessionCookie } from '$lib/server/auth/cookies';
-import { getAuthEnvironment } from '$lib/server/auth/environment';
-import { finishLoginFlow } from '$lib/server/auth/flow';
-import { exchangeAuthorizationCode } from '$lib/server/auth/oidc';
-import { redirectNoStore } from '$lib/server/auth/responses';
-import { createAuthenticatedSession } from '$lib/server/auth/session';
-import { safeReturnTo } from '$lib/server/auth/validation';
+import { OIDC_FLOW_COOKIE_NAME } from '#lib/server/auth/constants.js';
+import { clearOidcFlowCookie, setSessionCookie } from '#lib/server/auth/cookies.js';
+import { getAuthEnvironment } from '#lib/server/auth/environment.js';
+import { finishLoginFlow } from '#lib/server/auth/flow.js';
+import { exchangeAuthorizationCode } from '#lib/server/auth/oidc.js';
+import { redirectNoStore } from '#lib/server/auth/responses.js';
+import { createAuthenticatedSession } from '#lib/server/auth/session.js';
+import { safeReturnTo } from '#lib/server/auth/validation.js';
 
 export const GET: RequestHandler = async ({ cookies, url }) => {
 	const environment = getAuthEnvironment();
