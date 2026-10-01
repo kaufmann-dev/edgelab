@@ -360,6 +360,8 @@ describe('Options Starter placement', () => {
 	});
 
 	it('accepts a limit option without snapshot pricing and leaves it open for aggregate execution', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-08-04T15:00:00.000Z'));
 		const provider = {
 			getOptionContract: vi.fn(async () => optionInstrument()),
 			getUpcomingMarketHolidays: vi.fn(async () => []),
